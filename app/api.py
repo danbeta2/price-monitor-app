@@ -64,7 +64,9 @@ def sync_products():
     out_of_stock = 0
     
     # Prima chiamata per verificare la connessione
+    print("[Sync] Starting sync...")
     first_batch = wc.get_products(page=1, per_page=50)
+    print(f"[Sync] First batch: {type(first_batch)}, length: {len(first_batch) if first_batch else 'None'}")
     
     if first_batch is None:
         return jsonify({
@@ -78,7 +80,7 @@ def sync_products():
             'synced': 0,
             'in_stock': 0,
             'out_of_stock': 0,
-            'message': 'Nessun prodotto trovato su WooCommerce'
+            'message': 'Nessun prodotto trovato su WooCommerce (lista vuota)'
         })
     
     # Processa prima batch
@@ -97,37 +99,48 @@ def sync_products():
                 break
     
     # Processa tutti i prodotti
-    for batch in products_to_process:
-        for wc_product in batch:
-            product = Product.query.filter_by(wc_product_id=wc_product['id']).first()
-            
-            if not product:
-                product = Product(wc_product_id=wc_product['id'])
-                db.session.add(product)
-            
-            product.name = wc_product.get('name', '')[:500]
-            product.sku = wc_product.get('sku', '')[:100] if wc_product.get('sku') else None
-            product.price = float(wc_product.get('price') or 0)
-            product.stock_status = wc_product.get('stock_status', 'instock')
-            product.stock_quantity = wc_product.get('stock_quantity') or 0
-            
-            if product.stock_status == 'instock':
-                in_stock += 1
-            else:
-                out_of_stock += 1
-            
-            images = wc_product.get('images', [])
-            if images:
-                product.image_url = images[0].get('src', '')[:1000]
-            
-            synced += 1
-    
-    db.session.commit()
-    return jsonify({
-        'synced': synced,
-        'in_stock': in_stock,
-        'out_of_stock': out_of_stock,
-    })
+    try:
+        for batch in products_to_process:
+            for wc_product in batch:
+                product = Product.query.filter_by(wc_product_id=wc_product['id']).first()
+                
+                if not product:
+                    product = Product(wc_product_id=wc_product['id'])
+                    db.session.add(product)
+                
+                product.name = wc_product.get('name', '')[:500]
+                product.sku = wc_product.get('sku', '')[:100] if wc_product.get('sku') else None
+                product.price = float(wc_product.get('price') or 0)
+                product.stock_status = wc_product.get('stock_status', 'instock')
+                product.stock_quantity = wc_product.get('stock_quantity') or 0
+                
+                if product.stock_status == 'instock':
+                    in_stock += 1
+                else:
+                    out_of_stock += 1
+                
+                images = wc_product.get('images', [])
+                if images:
+                    product.image_url = images[0].get('src', '')[:1000]
+                
+                synced += 1
+        
+        db.session.commit()
+        print(f"[Sync] Completed: {synced} synced, {in_stock} in stock, {out_of_stock} out of stock")
+        
+        return jsonify({
+            'synced': synced,
+            'in_stock': in_stock,
+            'out_of_stock': out_of_stock,
+        })
+    except Exception as e:
+        db.session.rollback()
+        print(f"[Sync] Error: {str(e)}")
+        return jsonify({
+            'error': 'Errore durante la sincronizzazione',
+            'details': str(e),
+            'synced': 0
+        }), 500
 
 @api_bp.route('/monitors', methods=['GET'])
 def get_monitors():
