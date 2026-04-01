@@ -41,7 +41,8 @@ class Monitor(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     product_id = db.Column(db.Integer, db.ForeignKey('products.id'), nullable=False)
     search_query = db.Column(db.String(500), nullable=False)
-    source = db.Column(db.String(50), default='google_shopping')
+    source = db.Column(db.String(50), default='both')  # 'both', 'google_shopping', 'ebay'
+    language = db.Column(db.String(10), default='it')  # Lingua prodotto: 'it', 'en', 'any'
     price_tolerance = db.Column(db.Float, default=50.0)
     is_active = db.Column(db.Boolean, default=True)
     last_run_at = db.Column(db.DateTime)
@@ -55,6 +56,7 @@ class Monitor(db.Model):
             'product_id': self.product_id,
             'search_query': self.search_query,
             'source': self.source,
+            'language': self.language,
             'price_tolerance': self.price_tolerance,
             'is_active': self.is_active,
             'last_run_at': self.last_run_at.isoformat() if self.last_run_at else None,

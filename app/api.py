@@ -343,55 +343,17 @@ def get_monitor_prices(monitor_id):
 @api_bp.route('/test-search', methods=['POST'])
 def test_search():
     data = request.json
-    source = data.get('source', 'google_shopping')
+    source = data.get('source', 'both')  # Default: entrambe le fonti
     query = data.get('query', '')
     filter_enabled = data.get('filter', True)
+    language = data.get('language', 'it')
     
     if not query:
         return jsonify({'error': 'Query required'}), 400
     
     collector = PriceCollector()
+    result = collector.test_search(source, query, filter_results=filter_enabled, language=language)
     
-    # Se source è 'both', cerca su entrambe le fonti
-    if source == 'both':
-        google_result = collector.test_search('google_shopping', query, filter_results=filter_enabled)
-        ebay_result = collector.test_search('ebay', query, filter_results=filter_enabled)
-        
-        all_results = []
-        total_filtered = 0
-        total_raw = 0
-        
-        # Aggiungi risultati Google Shopping
-        for r in google_result.get('results', []):
-            r['source'] = 'google_shopping'
-            all_results.append(r)
-        total_filtered += google_result.get('filtered_out', 0)
-        total_raw += google_result.get('total_raw', len(google_result.get('results', [])))
-        
-        # Aggiungi risultati eBay
-        for r in ebay_result.get('results', []):
-            r['source'] = 'ebay'
-            all_results.append(r)
-        total_filtered += ebay_result.get('filtered_out', 0)
-        total_raw += ebay_result.get('total_raw', len(ebay_result.get('results', [])))
-        
-        # Ordina per prezzo
-        all_results.sort(key=lambda x: x.get('price', 999999))
-        
-        return jsonify({
-            'results': all_results,
-            'total': len(all_results),
-            'total_raw': total_raw,
-            'filtered_out': total_filtered,
-            'google_count': len(google_result.get('results', [])),
-            'ebay_count': len(ebay_result.get('results', [])),
-            'errors': {
-                'google': google_result.get('error'),
-                'ebay': ebay_result.get('error'),
-            }
-        })
-    
-    result = collector.test_search(source, query, filter_results=filter_enabled)
     return jsonify(result)
 
 @api_bp.route('/collect-all', methods=['POST'])
@@ -419,10 +381,10 @@ def collect_all():
 
 @api_bp.route('/monitors/create-all', methods=['POST'])
 def create_monitors_for_all():
-    """Crea monitor per TUTTI i prodotti disponibili (in stock) su ENTRAMBE le fonti"""
+    """Crea UN monitor per ogni prodotto disponibile (cerca su Google + eBay insieme)"""
     data = request.json or {}
     price_tolerance = data.get('price_tolerance', 50)
-    sources = ['google_shopping', 'ebay']  # Entrambe le fonti
+    language = data.get('language', 'it')
     
     # Prendi tutti i prodotti in stock dal database locale
     products = Product.query.filter_by(stock_status='instock').all()
@@ -434,42 +396,33 @@ def create_monitors_for_all():
             'created': 0
         })
     
-    created_google = 0
-    created_ebay = 0
+    created = 0
     skipped = 0
     
     for product in products:
-        for source in sources:
-            # Controlla se esiste già un monitor per questo prodotto e fonte
-            existing = Monitor.query.filter_by(product_id=product.id, source=source).first()
-            if existing:
-                skipped += 1
-                continue
-            
-            # Crea il monitor usando il nome prodotto come query
-            monitor = Monitor(
-                product_id=product.id,
-                search_query=product.name,
-                source=source,
-                price_tolerance=price_tolerance,
-                is_active=True,
-            )
-            db.session.add(monitor)
-            
-            if source == 'google_shopping':
-                created_google += 1
-            else:
-                created_ebay += 1
+        # Controlla se esiste già un monitor per questo prodotto
+        existing = Monitor.query.filter_by(product_id=product.id).first()
+        if existing:
+            skipped += 1
+            continue
+        
+        # Crea UN monitor che cerca su ENTRAMBE le fonti
+        monitor = Monitor(
+            product_id=product.id,
+            search_query=product.name,
+            source='both',  # Cerca su Google + eBay
+            language=language,
+            price_tolerance=price_tolerance,
+            is_active=True,
+        )
+        db.session.add(monitor)
+        created += 1
     
     db.session.commit()
     
-    total_created = created_google + created_ebay
-    
     return jsonify({
-        'created': total_created,
-        'created_google': created_google,
-        'created_ebay': created_ebay,
+        'created': created,
         'skipped': skipped,
         'total_products': len(products),
-        'message': f'Creati {total_created} monitor ({created_google} Google + {created_ebay} eBay)'
+        'message': f'Creati {created} monitor (ogni monitor cerca su Google + eBay)'
     })
