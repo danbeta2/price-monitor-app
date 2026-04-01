@@ -120,79 +120,41 @@
     </div>
 </div>
 
-<!-- Monitor Analysis -->
-{% if monitors_analysis %}
+<!-- Recent Monitors -->
+{% if recent_monitors %}
 <div class="row g-3 mb-4">
     <div class="col-12">
         <div class="card">
             <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-graph-up"></i> Analisi Monitor</span>
+                <span><i class="bi bi-clock-history"></i> Monitor Recenti</span>
                 <a href="/monitors" class="btn btn-sm btn-outline-primary">Vedi tutti</a>
             </div>
             <div class="card-body">
-                <div class="row">
-                    {% for item in monitors_analysis %}
-                    <div class="col-md-6 col-lg-4">
-                        <div class="monitor-card {{ item.status }}">
-                            <div class="monitor-header">
-                                <div class="monitor-title" title="{{ item.monitor.product.name if item.monitor.product else item.monitor.search_query }}">
-                                    {{ (item.monitor.product.name if item.monitor.product else item.monitor.search_query)[:40] }}{% if (item.monitor.product.name if item.monitor.product else item.monitor.search_query)|length > 40 %}...{% endif %}
-                                </div>
-                                {% if item.status == 'best' %}
-                                <span class="monitor-badge bg-success text-white">Competitivo</span>
-                                {% elif item.status == 'average' %}
-                                <span class="monitor-badge bg-warning text-dark">Media</span>
-                                {% elif item.status == 'high' %}
-                                <span class="monitor-badge bg-danger text-white">Alto</span>
-                                {% else %}
-                                <span class="monitor-badge bg-secondary text-white">No dati</span>
-                                {% endif %}
-                            </div>
-                            
-                            <div class="monitor-prices">
-                                <div class="price-box">
-                                    <div class="label">Tuo prezzo</div>
-                                    <div class="value your-price">€{{ "%.2f"|format(item.your_price) if item.your_price else '-' }}</div>
-                                </div>
-                                <div class="price-box">
-                                    <div class="label">Min competitor</div>
-                                    <div class="value best-price">€{{ "%.2f"|format(item.min_price) if item.min_price else '-' }}</div>
-                                </div>
-                                <div class="price-box">
-                                    <div class="label">Differenza</div>
-                                    <div class="value">
-                                        {% if item.diff_percent is not none %}
-                                        <span class="price-diff {% if item.diff_percent < 0 %}lower{% else %}higher{% endif %}">
-                                            {% if item.diff_percent > 0 %}+{% endif %}{{ item.diff_percent }}%
-                                        </span>
-                                        {% else %}
-                                        -
-                                        {% endif %}
-                                    </div>
-                                </div>
-                            </div>
-                            
-                            {% if item.your_price and item.avg_price %}
-                            <div class="suggested-price-inline">
-                                <small class="text-muted">
-                                    <i class="bi bi-lightbulb"></i> Prezzo suggerito: 
-                                    <strong>€{{ "%.2f"|format(item.avg_price * 0.95) }}</strong>
-                                    <span class="text-muted">(5% sotto media)</span>
-                                </small>
-                            </div>
-                            {% endif %}
-                            
-                            <div class="monitor-actions">
-                                <button class="btn btn-sm btn-outline-primary" onclick="viewPrices({{ item.monitor.id }})">
-                                    <i class="bi bi-eye"></i> Dettagli
-                                </button>
-                                <button class="btn btn-sm btn-outline-success" onclick="collectPrices({{ item.monitor.id }})">
-                                    <i class="bi bi-arrow-repeat"></i> Aggiorna
-                                </button>
-                            </div>
-                        </div>
-                    </div>
-                    {% endfor %}
+                <div class="table-responsive">
+                    <table class="table table-sm">
+                        <thead>
+                            <tr>
+                                <th>Prodotto</th>
+                                <th>Query</th>
+                                <th>Fonte</th>
+                                <th>Ultimo Run</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for monitor in recent_monitors %}
+                            <tr>
+                                <td>{{ (monitor.product.name if monitor.product else 'N/A')[:40] }}...</td>
+                                <td><code>{{ monitor.search_query[:30] }}...</code></td>
+                                <td>
+                                    <span class="badge {% if monitor.source == 'google_shopping' %}bg-primary{% else %}bg-warning{% endif %}">
+                                        {{ 'Google' if monitor.source == 'google_shopping' else 'eBay' }}
+                                    </span>
+                                </td>
+                                <td>{{ monitor.last_run_at.strftime('%d/%m %H:%M') if monitor.last_run_at else 'Mai' }}</td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
