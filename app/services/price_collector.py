@@ -42,16 +42,42 @@ class PriceCollector:
         
         your_price = monitor.product.price if monitor.product else None
         saved_count = 0
+        skipped_duplicates = 0
+        valid_count = 0
+        
+        today = datetime.utcnow().date()
         
         for item in result.get('results', []):
-            is_valid = self._validate_result(item, your_price, monitor.price_tolerance)
+            # Applica filtro con search_query per matching keywords
+            is_valid = self._validate_result(item, your_price, monitor.price_tolerance, monitor.search_query)
+            
+            if is_valid:
+                valid_count += 1
+            
+            seller_name = item.get('seller_name', '')[:255] if item.get('seller_name') else None
+            
+            # Evita duplicati: stesso monitor + stesso venditore + stesso giorno
+            existing = PriceRecord.query.filter(
+                PriceRecord.monitor_id == monitor.id,
+                PriceRecord.seller_name == seller_name,
+                db.func.date(PriceRecord.fetched_at) == today
+            ).first()
+            
+            if existing:
+                # Aggiorna il prezzo se è cambiato
+                if existing.price != item['price']:
+                    existing.price = item['price']
+                    existing.is_valid = is_valid
+                    existing.fetched_at = datetime.utcnow()
+                skipped_duplicates += 1
+                continue
             
             record = PriceRecord(
                 monitor_id=monitor.id,
                 title=item['title'][:500],
                 price=item['price'],
                 currency=item.get('currency', 'EUR'),
-                seller_name=item.get('seller_name', '')[:255] if item.get('seller_name') else None,
+                seller_name=seller_name,
                 seller_rating=item.get('seller_rating'),
                 url=item.get('url', '')[:2000],
                 source=item.get('source', monitor.source),
@@ -68,7 +94,8 @@ class PriceCollector:
         return {
             'total_results': len(result.get('results', [])),
             'saved': saved_count,
-            'valid': sum(1 for r in result.get('results', []) if self._validate_result(r, your_price, monitor.price_tolerance)),
+            'valid': valid_count,
+            'skipped_duplicates': skipped_duplicates,
         }
     
     def _validate_result(self, item, your_price, tolerance, search_query=None):

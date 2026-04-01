@@ -10,44 +10,77 @@
     <link href="{{ url_for('static', filename='css/style.css') }}" rel="stylesheet">
 </head>
 <body>
-    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
-        <div class="container-fluid">
-            <a class="navbar-brand" href="/">
-                <i class="bi bi-graph-up-arrow"></i> Price Monitor
-            </a>
-            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
-                <span class="navbar-toggler-icon"></span>
-            </button>
-            <div class="collapse navbar-collapse" id="navbarNav">
-                <ul class="navbar-nav">
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'main.dashboard' %}active{% endif %}" href="/">
-                            <i class="bi bi-speedometer2"></i> Dashboard
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'main.products' %}active{% endif %}" href="/products">
-                            <i class="bi bi-box-seam"></i> Prodotti
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'main.monitors' %}active{% endif %}" href="/monitors">
-                            <i class="bi bi-eye"></i> Monitor
-                        </a>
-                    </li>
-                    <li class="nav-item">
-                        <a class="nav-link {% if request.endpoint == 'main.settings' %}active{% endif %}" href="/settings">
-                            <i class="bi bi-gear"></i> Impostazioni
-                        </a>
-                    </li>
-                </ul>
+    <div class="app-container">
+        <!-- Sidebar -->
+        <aside class="sidebar">
+            <div class="sidebar-header">
+                <a href="/" class="sidebar-brand">
+                    <i class="bi bi-graph-up-arrow"></i>
+                    <span>Price Monitor</span>
+                </a>
             </div>
-        </div>
-    </nav>
+            
+            <nav class="sidebar-nav">
+                <a href="/" class="sidebar-link {% if request.endpoint == 'main.dashboard' %}active{% endif %}">
+                    <i class="bi bi-speedometer2"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="/monitors" class="sidebar-link {% if request.endpoint == 'main.monitors' %}active{% endif %}">
+                    <i class="bi bi-eye"></i>
+                    <span>Monitor</span>
+                </a>
+                <a href="/products" class="sidebar-link {% if request.endpoint == 'main.products' %}active{% endif %}">
+                    <i class="bi bi-box-seam"></i>
+                    <span>Aggiungi Monitor</span>
+                </a>
+                
+                <div class="sidebar-divider"></div>
+                
+                <a href="/settings" class="sidebar-link {% if request.endpoint == 'main.settings' %}active{% endif %}">
+                    <i class="bi bi-gear"></i>
+                    <span>Impostazioni</span>
+                </a>
+            </nav>
+            
+            <div class="sidebar-footer">
+                <div class="connection-status">
+                    <small class="text-muted">Connessioni</small>
+                    <div class="status-dots">
+                        <span class="status-dot {% if sources_configured.google_shopping if sources_configured is defined else false %}active{% endif %}" title="Google Shopping"></span>
+                        <span class="status-dot {% if sources_configured.ebay if sources_configured is defined else false %}active{% endif %}" title="eBay"></span>
+                    </div>
+                </div>
+            </div>
+        </aside>
 
-    <main class="container-fluid py-4">
-        {% block content %}{% endblock %}
-    </main>
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Top Bar -->
+            <header class="top-bar">
+                <div class="top-bar-left">
+                    <button class="btn btn-link sidebar-toggle d-lg-none" type="button">
+                        <i class="bi bi-list"></i>
+                    </button>
+                    <div class="breadcrumb-nav">
+                        {% block breadcrumb %}
+                        <span class="breadcrumb-item">{% block page_title %}Dashboard{% endblock %}</span>
+                        {% endblock %}
+                    </div>
+                </div>
+                <div class="top-bar-right">
+                    <div class="search-box">
+                        <i class="bi bi-search"></i>
+                        <input type="text" placeholder="Cerca prodotto... (Cmd+K)" id="global-search">
+                    </div>
+                </div>
+            </header>
+
+            <!-- Page Content -->
+            <div class="page-content">
+                {% block content %}{% endblock %}
+            </div>
+        </main>
+    </div>
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
     <script src="{{ url_for('static', filename='js/app.js') }}"></script>

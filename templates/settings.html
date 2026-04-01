@@ -1,103 +1,245 @@
 {% extends "base.html" %}
 
 {% block title %}Impostazioni - Price Monitor{% endblock %}
+{% block page_title %}Impostazioni{% endblock %}
 
 {% block content %}
-<div class="row mb-4">
-    <div class="col-12">
-        <h1 class="h3"><i class="bi bi-gear"></i> Impostazioni</h1>
-        <p class="text-muted">Stato delle configurazioni API</p>
-    </div>
-</div>
-
-<div class="row">
-    <div class="col-md-6">
+<div class="row g-4">
+    <!-- Connessioni API -->
+    <div class="col-lg-6">
         <div class="card mb-4">
             <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-shop"></i> WooCommerce</h5>
+                <i class="bi bi-plug"></i> Connessioni API
             </div>
             <div class="card-body">
-                {% if sources_configured.woocommerce %}
-                <div class="alert alert-success">
-                    <i class="bi bi-check-circle"></i> Connesso
+                <div class="connection-item d-flex justify-content-between align-items-center mb-3 pb-3 border-bottom">
+                    <div>
+                        <strong><i class="bi bi-shop"></i> WooCommerce</strong>
+                        <div class="small text-muted">Sincronizzazione prodotti</div>
+                    </div>
+                    {% if sources_configured.woocommerce %}
+                    <span class="badge bg-success"><i class="bi bi-check-circle"></i> Connesso</span>
+                    {% else %}
+                    <span class="badge bg-danger"><i class="bi bi-x-circle"></i> Non configurato</span>
+                    {% endif %}
                 </div>
-                {% else %}
-                <div class="alert alert-danger">
-                    <i class="bi bi-x-circle"></i> Non configurato
+                
+                <div class="connection-item d-flex justify-content-between align-items-center mb-3 pb-3 border-bottom">
+                    <div>
+                        <strong><i class="bi bi-google"></i> Google Shopping</strong>
+                        <div class="small text-muted">Via SerpAPI</div>
+                    </div>
+                    {% if sources_configured.google_shopping %}
+                    <span class="badge bg-success"><i class="bi bi-check-circle"></i> Configurato</span>
+                    {% else %}
+                    <span class="badge bg-danger"><i class="bi bi-x-circle"></i> Non configurato</span>
+                    {% endif %}
                 </div>
-                {% endif %}
-                <p class="text-muted small">
-                    Configura le variabili d'ambiente:<br>
-                    <code>WC_URL</code>, <code>WC_CONSUMER_KEY</code>, <code>WC_CONSUMER_SECRET</code>
-                </p>
-            </div>
-        </div>
-        
-        <div class="card mb-4">
-            <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-google"></i> Google Shopping (SerpAPI)</h5>
-            </div>
-            <div class="card-body">
-                {% if sources_configured.google_shopping %}
-                <div class="alert alert-success">
-                    <i class="bi bi-check-circle"></i> Configurato
+                
+                <div class="connection-item d-flex justify-content-between align-items-center">
+                    <div>
+                        <strong><i class="bi bi-bag"></i> eBay</strong>
+                        <div class="small text-muted">Browse API</div>
+                    </div>
+                    {% if sources_configured.ebay %}
+                    <span class="badge bg-success"><i class="bi bi-check-circle"></i> Configurato</span>
+                    {% else %}
+                    <span class="badge bg-danger"><i class="bi bi-x-circle"></i> Non configurato</span>
+                    {% endif %}
                 </div>
-                {% else %}
-                <div class="alert alert-danger">
-                    <i class="bi bi-x-circle"></i> Non configurato
-                </div>
-                {% endif %}
-                <p class="text-muted small">
-                    Variabile d'ambiente: <code>SERPAPI_KEY</code><br>
-                    Ottieni la key da <a href="https://serpapi.com" target="_blank">serpapi.com</a>
-                </p>
             </div>
         </div>
         
         <div class="card">
             <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-bag"></i> eBay</h5>
+                <i class="bi bi-info-circle"></i> Variabili Railway
             </div>
             <div class="card-body">
-                {% if sources_configured.ebay %}
-                <div class="alert alert-success">
-                    <i class="bi bi-check-circle"></i> Configurato
-                </div>
-                {% else %}
-                <div class="alert alert-danger">
-                    <i class="bi bi-x-circle"></i> Non configurato
-                </div>
-                {% endif %}
-                <p class="text-muted small">
-                    Variabili d'ambiente: <code>EBAY_CLIENT_ID</code>, <code>EBAY_CLIENT_SECRET</code><br>
-                    Ottieni le credenziali da <a href="https://developer.ebay.com" target="_blank">developer.ebay.com</a>
+                <p class="small text-muted mb-3">
+                    Vai su Railway > tuo progetto > Variables e aggiungi:
                 </p>
+                <div class="bg-dark text-light p-3 rounded" style="font-family: monospace; font-size: 0.8rem;">
+                    WC_URL=https://tuosito.it<br>
+                    WC_CONSUMER_KEY=ck_xxx<br>
+                    WC_CONSUMER_SECRET=cs_xxx<br>
+                    SERPAPI_KEY=xxx<br>
+                    EBAY_CLIENT_ID=xxx<br>
+                    EBAY_CLIENT_SECRET=xxx
+                </div>
             </div>
         </div>
     </div>
     
-    <div class="col-md-6">
-        <div class="card">
-            <div class="card-header">
-                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Informazioni</h5>
+    <!-- Filtri e Keywords -->
+    <div class="col-lg-6">
+        <div class="card mb-4">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <span><i class="bi bi-funnel"></i> Filtri Ricerca</span>
+                <button class="btn btn-sm btn-primary" id="btn-save-filters">
+                    <i class="bi bi-check"></i> Salva
+                </button>
             </div>
             <div class="card-body">
-                <h6>Come configurare le variabili d'ambiente</h6>
-                <p>Su Railway, vai su <strong>Variables</strong> nel tuo progetto e aggiungi:</p>
-                <pre class="bg-light p-3 rounded"><code>WC_URL=https://scimmia.it
-WC_CONSUMER_KEY=ck_xxx
-WC_CONSUMER_SECRET=cs_xxx
-SERPAPI_KEY=xxx
-EBAY_CLIENT_ID=xxx
-EBAY_CLIENT_SECRET=xxx</code></pre>
+                <div class="mb-4">
+                    <label class="form-label fw-bold">Keyword Negative</label>
+                    <p class="small text-muted">Risultati contenenti queste parole saranno esclusi</p>
+                    <div class="keyword-list" id="negative-keywords">
+                        <!-- Keywords will be rendered here -->
+                    </div>
+                    <div class="input-group mt-2">
+                        <input type="text" class="form-control form-control-sm" id="new-keyword" placeholder="Aggiungi keyword...">
+                        <button class="btn btn-sm btn-outline-primary" type="button" id="btn-add-keyword">
+                            <i class="bi bi-plus"></i>
+                        </button>
+                    </div>
+                </div>
                 
-                <h6 class="mt-4">Keywords Negative (default)</h6>
-                <p class="small text-muted">
-                    I seguenti termini nei titoli rendono i risultati non validi:<br>
-                    <code>lot, 2x, 3x, bundle, empty, no cards, opened, used, fake, replica, proxy, japanese, korean, repack</code>
-                </p>
+                <div class="mb-4">
+                    <label class="form-label fw-bold">Domini Esclusi</label>
+                    <p class="small text-muted">Risultati da questi domini saranno esclusi (uno per riga)</p>
+                    <textarea class="form-control" id="excluded-domains" rows="3" placeholder="esempio.it&#10;altro-sito.com"></textarea>
+                </div>
+                
+                <div class="mb-4">
+                    <label class="form-label fw-bold">Tolleranza Prezzo Default</label>
+                    <p class="small text-muted">Range di prezzo accettabile rispetto al tuo (in %)</p>
+                    <div class="input-group" style="width: 150px;">
+                        <input type="number" class="form-control" id="price-tolerance" value="50" min="10" max="200">
+                        <span class="input-group-text">%</span>
+                    </div>
+                </div>
+                
+                <div class="mb-0">
+                    <label class="form-label fw-bold">Soglia Match Keywords</label>
+                    <p class="small text-muted">% minima di parole della query che devono essere nel titolo</p>
+                    <div class="input-group" style="width: 150px;">
+                        <input type="number" class="form-control" id="keyword-match-threshold" value="80" min="50" max="100">
+                        <span class="input-group-text">%</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <i class="bi bi-star"></i> Score Affidabilità
+            </div>
+            <div class="card-body">
+                <p class="small text-muted mb-3">Come viene calcolato lo score dei risultati:</p>
+                <div class="score-explanation">
+                    <div class="d-flex align-items-center mb-2">
+                        <span class="score-stars me-2">★★★</span>
+                        <span class="small">Perfetto: tutte le keyword + prezzo in range + nessuna keyword negativa</span>
+                    </div>
+                    <div class="d-flex align-items-center mb-2">
+                        <span class="score-stars me-2">★★<span class="empty">★</span></span>
+                        <span class="small">Buono: 80%+ keyword match + prezzo ragionevole</span>
+                    </div>
+                    <div class="d-flex align-items-center mb-2">
+                        <span class="score-stars me-2">★<span class="empty">★★</span></span>
+                        <span class="small">Basso: match parziale, solo per riferimento</span>
+                    </div>
+                    <div class="d-flex align-items-center">
+                        <span class="score-stars me-2 text-danger">✗</span>
+                        <span class="small">Escluso: contiene keyword negative o prezzo fuori range</span>
+                    </div>
+                </div>
             </div>
         </div>
     </div>
 </div>
+
+<div id="save-result" class="position-fixed bottom-0 end-0 p-3" style="z-index: 1050; display: none;">
+    <div class="alert alert-success mb-0">
+        <i class="bi bi-check-circle"></i> Impostazioni salvate
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const defaultKeywords = [
+    'lot', 'lotto', '2x', '3x', '4x', '5x', 'x2', 'x3', 'x4', 'x5',
+    'bundle', 'empty', 'no cards', 'senza carte',
+    'opened', 'used', 'usato', 'fake', 'replica', 'proxy', 'custom',
+    'japanese', 'jap', 'giapponese', 'korean', 'coreano', 'chinese', 'cinese',
+    'repack', 'display', 'box', 'case', 'master', 'booster box',
+    'busta', 'bustina', 'bustine', 'buste', 'singola', 'singolo',
+    'coppia', 'doppio', 'doppia', 'triple', 'triplo'
+];
+
+let currentKeywords = [];
+
+document.addEventListener('DOMContentLoaded', function() {
+    // Load saved settings or defaults
+    const saved = localStorage.getItem('pm_negative_keywords');
+    currentKeywords = saved ? JSON.parse(saved) : [...defaultKeywords];
+    renderKeywords();
+    
+    const savedDomains = localStorage.getItem('pm_excluded_domains');
+    if (savedDomains) {
+        document.getElementById('excluded-domains').value = savedDomains;
+    }
+    
+    const savedTolerance = localStorage.getItem('pm_price_tolerance');
+    if (savedTolerance) {
+        document.getElementById('price-tolerance').value = savedTolerance;
+    }
+    
+    const savedThreshold = localStorage.getItem('pm_keyword_threshold');
+    if (savedThreshold) {
+        document.getElementById('keyword-match-threshold').value = savedThreshold;
+    }
+    
+    // Event listeners
+    document.getElementById('btn-add-keyword').addEventListener('click', addKeyword);
+    document.getElementById('new-keyword').addEventListener('keypress', function(e) {
+        if (e.key === 'Enter') addKeyword();
+    });
+    document.getElementById('btn-save-filters').addEventListener('click', saveFilters);
+});
+
+function renderKeywords() {
+    const container = document.getElementById('negative-keywords');
+    container.innerHTML = currentKeywords.map(kw => `
+        <span class="keyword-tag">
+            ${escapeHtml(kw)}
+            <span class="remove" onclick="removeKeyword('${escapeHtml(kw)}')">&times;</span>
+        </span>
+    `).join('');
+}
+
+function addKeyword() {
+    const input = document.getElementById('new-keyword');
+    const keyword = input.value.trim().toLowerCase();
+    
+    if (keyword && !currentKeywords.includes(keyword)) {
+        currentKeywords.push(keyword);
+        renderKeywords();
+        input.value = '';
+    }
+}
+
+function removeKeyword(keyword) {
+    currentKeywords = currentKeywords.filter(k => k !== keyword);
+    renderKeywords();
+}
+
+function saveFilters() {
+    localStorage.setItem('pm_negative_keywords', JSON.stringify(currentKeywords));
+    localStorage.setItem('pm_excluded_domains', document.getElementById('excluded-domains').value);
+    localStorage.setItem('pm_price_tolerance', document.getElementById('price-tolerance').value);
+    localStorage.setItem('pm_keyword_threshold', document.getElementById('keyword-match-threshold').value);
+    
+    const result = document.getElementById('save-result');
+    result.style.display = 'block';
+    setTimeout(() => { result.style.display = 'none'; }, 3000);
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
 {% endblock %}
