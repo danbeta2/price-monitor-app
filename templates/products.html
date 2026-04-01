@@ -261,7 +261,24 @@ async function createMonitors() {
     
     resultDiv.style.display = 'block';
     resultDiv.className = 'alert alert-success';
-    resultDiv.innerHTML = `<strong>Completato!</strong> ${data.created} creati, ${data.skipped} già esistenti`;
+    
+    if (data.created > 0) {
+        resultDiv.innerHTML = `
+            <strong>Completato!</strong> ${data.created} creati, ${data.skipped} già esistenti
+            <div class="mt-2">
+                <a href="/monitors" class="btn btn-sm btn-success">
+                    <i class="bi bi-arrow-right"></i> Vai ai Monitor
+                </a>
+            </div>
+        `;
+        
+        // Auto-redirect dopo 2 secondi
+        setTimeout(() => {
+            window.location.href = '/monitors';
+        }, 2000);
+    } else {
+        resultDiv.innerHTML = `<strong>Completato!</strong> ${data.created} creati, ${data.skipped} già esistenti`;
+    }
     
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-plus-circle"></i> Crea Monitor';
