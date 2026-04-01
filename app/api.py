@@ -419,10 +419,10 @@ def collect_all():
 
 @api_bp.route('/monitors/create-all', methods=['POST'])
 def create_monitors_for_all():
-    """Crea monitor per TUTTI i prodotti disponibili (in stock)"""
+    """Crea monitor per TUTTI i prodotti disponibili (in stock) su ENTRAMBE le fonti"""
     data = request.json or {}
-    source = data.get('source', 'google_shopping')
     price_tolerance = data.get('price_tolerance', 50)
+    sources = ['google_shopping', 'ebay']  # Entrambe le fonti
     
     # Prendi tutti i prodotti in stock dal database locale
     products = Product.query.filter_by(stock_status='instock').all()
@@ -434,32 +434,42 @@ def create_monitors_for_all():
             'created': 0
         })
     
-    created = 0
+    created_google = 0
+    created_ebay = 0
     skipped = 0
     
     for product in products:
-        # Controlla se esiste già un monitor per questo prodotto e fonte
-        existing = Monitor.query.filter_by(product_id=product.id, source=source).first()
-        if existing:
-            skipped += 1
-            continue
-        
-        # Crea il monitor usando il nome prodotto come query
-        monitor = Monitor(
-            product_id=product.id,
-            search_query=product.name,
-            source=source,
-            price_tolerance=price_tolerance,
-            is_active=True,
-        )
-        db.session.add(monitor)
-        created += 1
+        for source in sources:
+            # Controlla se esiste già un monitor per questo prodotto e fonte
+            existing = Monitor.query.filter_by(product_id=product.id, source=source).first()
+            if existing:
+                skipped += 1
+                continue
+            
+            # Crea il monitor usando il nome prodotto come query
+            monitor = Monitor(
+                product_id=product.id,
+                search_query=product.name,
+                source=source,
+                price_tolerance=price_tolerance,
+                is_active=True,
+            )
+            db.session.add(monitor)
+            
+            if source == 'google_shopping':
+                created_google += 1
+            else:
+                created_ebay += 1
     
     db.session.commit()
     
+    total_created = created_google + created_ebay
+    
     return jsonify({
-        'created': created,
+        'created': total_created,
+        'created_google': created_google,
+        'created_ebay': created_ebay,
         'skipped': skipped,
         'total_products': len(products),
-        'message': f'Creati {created} monitor per {source}'
+        'message': f'Creati {total_created} monitor ({created_google} Google + {created_ebay} eBay)'
     })

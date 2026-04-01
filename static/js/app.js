@@ -188,11 +188,13 @@ async function createMonitorsForAll() {
     // Conferma con l'utente
     const confirmed = confirm(
         'Vuoi creare monitor per TUTTI i prodotti disponibili?\n\n' +
-        '⚠️ Questo creerà un monitor per ogni prodotto in stock.\n' +
-        '⚠️ Ogni raccolta prezzi consumerà crediti API (SerpAPI: 100/mese free).\n\n' +
-        'Scegli la fonte:\n' +
-        '• OK = Google Shopping\n' +
-        '• Annulla poi riprova per eBay'
+        '✅ Creerà 2 monitor per ogni prodotto:\n' +
+        '   • 1 su Google Shopping\n' +
+        '   • 1 su eBay\n\n' +
+        '⚠️ Limiti API:\n' +
+        '   • SerpAPI (Google): 100 ricerche/mese (free)\n' +
+        '   • eBay: 5000 ricerche/giorno (free)\n\n' +
+        'Continuare?'
     );
     
     if (!confirmed) return;
@@ -205,7 +207,7 @@ async function createMonitorsForAll() {
         const res = await fetch('/api/monitors/create-all', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ source: 'google_shopping', price_tolerance: 50 })
+            body: JSON.stringify({ price_tolerance: 50 })
         });
         const data = await res.json();
         
@@ -218,7 +220,10 @@ async function createMonitorsForAll() {
             resultDiv.className = 'alert alert-success';
             resultDiv.innerHTML = `
                 <i class="bi bi-check-circle"></i> <strong>${data.created} monitor creati!</strong><br>
-                <small>${data.skipped} già esistenti su ${data.total_products} prodotti</small>
+                <small>
+                    📊 Google: ${data.created_google || 0} | 🛒 eBay: ${data.created_ebay || 0}<br>
+                    ${data.skipped} già esistenti su ${data.total_products} prodotti
+                </small>
                 <div class="mt-2">
                     <a href="/monitors" class="btn btn-sm btn-success">Vai ai Monitor</a>
                 </div>
