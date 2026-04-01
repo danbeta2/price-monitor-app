@@ -46,8 +46,8 @@
                 <div class="connection-status">
                     <small class="text-muted">Connessioni</small>
                     <div class="status-dots">
-                        <span class="status-dot {% if sources_configured.google_shopping if sources_configured is defined else false %}active{% endif %}" title="Google Shopping"></span>
-                        <span class="status-dot {% if sources_configured.ebay if sources_configured is defined else false %}active{% endif %}" title="eBay"></span>
+                        <span class="status-dot {% if sources_configured is defined and sources_configured.google_shopping %}active{% endif %}" title="Google Shopping"></span>
+                        <span class="status-dot {% if sources_configured is defined and sources_configured.ebay %}active{% endif %}" title="eBay"></span>
                     </div>
                 </div>
             </div>
