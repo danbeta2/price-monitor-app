@@ -5,6 +5,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const btnSync = document.getElementById('btn-sync-products');
     const btnCollect = document.getElementById('btn-collect-all');
     const btnTestSearch = document.getElementById('btn-test-search');
+    const btnMonitorAll = document.getElementById('btn-monitor-all');
     
     if (btnSync) {
         btnSync.addEventListener('click', syncProducts);
@@ -16,6 +17,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (btnTestSearch) {
         btnTestSearch.addEventListener('click', testSearch);
+    }
+    
+    if (btnMonitorAll) {
+        btnMonitorAll.addEventListener('click', createMonitorsForAll);
     }
 });
 
@@ -174,6 +179,59 @@ async function testSearch() {
     
     btn.disabled = false;
     btn.innerHTML = '<i class="bi bi-search"></i> Cerca';
+}
+
+async function createMonitorsForAll() {
+    const btn = document.getElementById('btn-monitor-all');
+    const resultDiv = document.getElementById('action-result');
+    
+    // Conferma con l'utente
+    const confirmed = confirm(
+        'Vuoi creare monitor per TUTTI i prodotti disponibili?\n\n' +
+        '⚠️ Questo creerà un monitor per ogni prodotto in stock.\n' +
+        '⚠️ Ogni raccolta prezzi consumerà crediti API (SerpAPI: 100/mese free).\n\n' +
+        'Scegli la fonte:\n' +
+        '• OK = Google Shopping\n' +
+        '• Annulla poi riprova per eBay'
+    );
+    
+    if (!confirmed) return;
+    
+    btn.disabled = true;
+    const originalHtml = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    
+    try {
+        const res = await fetch('/api/monitors/create-all', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ source: 'google_shopping', price_tolerance: 50 })
+        });
+        const data = await res.json();
+        
+        resultDiv.style.display = 'block';
+        
+        if (data.error) {
+            resultDiv.className = 'alert alert-warning';
+            resultDiv.innerHTML = `<i class="bi bi-exclamation-triangle"></i> ${data.error}<br><small>${data.message || ''}</small>`;
+        } else {
+            resultDiv.className = 'alert alert-success';
+            resultDiv.innerHTML = `
+                <i class="bi bi-check-circle"></i> <strong>${data.created} monitor creati!</strong><br>
+                <small>${data.skipped} già esistenti su ${data.total_products} prodotti</small>
+                <div class="mt-2">
+                    <a href="/monitors" class="btn btn-sm btn-success">Vai ai Monitor</a>
+                </div>
+            `;
+        }
+    } catch (e) {
+        resultDiv.style.display = 'block';
+        resultDiv.className = 'alert alert-danger';
+        resultDiv.innerHTML = `<i class="bi bi-x-circle"></i> Errore: ${e.message}`;
+    }
+    
+    btn.disabled = false;
+    btn.innerHTML = originalHtml;
 }
 
 function escapeHtml(text) {
