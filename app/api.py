@@ -58,49 +58,31 @@ def sync_products():
             'synced': 0
         }), 400
     
-    page = 1
     synced = 0
     in_stock = 0
     out_of_stock = 0
     
-    # Prima chiamata per verificare la connessione
     print("[Sync] Starting sync...")
-    first_batch = wc.get_products(page=1, per_page=50)
-    print(f"[Sync] First batch: {type(first_batch)}, length: {len(first_batch) if first_batch else 'None'}")
     
-    if first_batch is None:
-        return jsonify({
-            'error': 'Errore connessione WooCommerce',
-            'details': wc.last_error or 'Impossibile connettersi a WooCommerce API',
-            'synced': 0
-        }), 500
-    
-    if not first_batch:
-        return jsonify({
-            'synced': 0,
-            'in_stock': 0,
-            'out_of_stock': 0,
-            'message': 'Nessun prodotto trovato su WooCommerce (lista vuota)'
-        })
-    
-    # Processa prima batch
-    products_to_process = [first_batch]
-    
-    # Carica altre pagine se necessario
-    if len(first_batch) == 50:
-        page = 2
-        while True:
-            more_products = wc.get_products(page=page, per_page=50)
-            if not more_products:
-                break
-            products_to_process.append(more_products)
-            page += 1
-            if len(more_products) < 50:
-                break
-    
-    # Processa tutti i prodotti
     try:
-        for batch in products_to_process:
+        page = 1
+        max_pages = 10  # Limite sicurezza: max 500 prodotti
+        
+        while page <= max_pages:
+            print(f"[Sync] Fetching page {page}...")
+            batch = wc.get_products(page=page, per_page=50)
+            
+            if batch is None and page == 1:
+                return jsonify({
+                    'error': 'Errore connessione WooCommerce',
+                    'details': wc.last_error or 'Impossibile connettersi',
+                    'synced': 0
+                }), 500
+            
+            if not batch:
+                break
+            
+            # Processa questo batch e commit subito
             for wc_product in batch:
                 product = Product.query.filter_by(wc_product_id=wc_product['id']).first()
                 
@@ -124,8 +106,16 @@ def sync_products():
                     product.image_url = images[0].get('src', '')[:1000]
                 
                 synced += 1
+            
+            # Commit dopo ogni batch per evitare timeout
+            db.session.commit()
+            print(f"[Sync] Page {page} done, total synced: {synced}")
+            
+            if len(batch) < 50:
+                break
+            
+            page += 1
         
-        db.session.commit()
         print(f"[Sync] Completed: {synced} synced, {in_stock} in stock, {out_of_stock} out of stock")
         
         return jsonify({
@@ -133,13 +123,16 @@ def sync_products():
             'in_stock': in_stock,
             'out_of_stock': out_of_stock,
         })
+        
     except Exception as e:
         db.session.rollback()
         print(f"[Sync] Error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return jsonify({
             'error': 'Errore durante la sincronizzazione',
             'details': str(e),
-            'synced': 0
+            'synced': synced  # Ritorna quanti ne ha già sincronizzati
         }), 500
 
 @api_bp.route('/monitors', methods=['GET'])
