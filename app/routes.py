@@ -101,21 +101,23 @@ def dashboard():
         monitors_analysis=monitors_with_analysis[:10],  # Top 10
     )
 
+def get_sources_configured():
+    return {
+        'google_shopping': bool(current_app.config.get('SERPAPI_KEY')),
+        'ebay': bool(current_app.config.get('EBAY_CLIENT_ID') and current_app.config.get('EBAY_CLIENT_SECRET')),
+        'woocommerce': bool(current_app.config.get('WC_URL') and current_app.config.get('WC_CONSUMER_KEY')),
+    }
+
 @main_bp.route('/products')
 def products():
-    return render_template('products.html')
+    return render_template('products.html', sources_configured=get_sources_configured())
 
 @main_bp.route('/monitors')
 def monitors():
     from app.models import Monitor
     monitors = Monitor.query.order_by(Monitor.created_at.desc()).all()
-    return render_template('monitors.html', monitors=monitors)
+    return render_template('monitors.html', monitors=monitors, sources_configured=get_sources_configured())
 
 @main_bp.route('/settings')
 def settings():
-    sources_configured = {
-        'google_shopping': bool(current_app.config['SERPAPI_KEY']),
-        'ebay': bool(current_app.config['EBAY_CLIENT_ID'] and current_app.config['EBAY_CLIENT_SECRET']),
-        'woocommerce': bool(current_app.config['WC_URL'] and current_app.config['WC_CONSUMER_KEY']),
-    }
-    return render_template('settings.html', sources_configured=sources_configured)
+    return render_template('settings.html', sources_configured=get_sources_configured())
