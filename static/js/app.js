@@ -115,16 +115,28 @@ async function testSearch() {
                 return '<span class="badge bg-secondary">?</span>';
             };
             
-            // Header con riepilogo fonti (se ricerca su entrambi)
+            // Header con riepilogo fonti e filtri
             let summaryHtml = '';
+            const filteredOut = data.filtered_out || 0;
+            const totalRaw = data.total_raw || data.total;
+            
             if (source === 'both' && data.google_count !== undefined) {
                 summaryHtml = `
                     <div class="mb-3">
                         <span class="badge bg-primary me-2">Google: ${data.google_count}</span>
                         <span class="badge bg-warning text-dark me-2">eBay: ${data.ebay_count}</span>
-                        <span class="badge bg-dark">Totale: ${data.total}</span>
+                        <span class="badge bg-success">Validi: ${data.total}</span>
+                        ${filteredOut > 0 ? `<span class="badge bg-secondary ms-2">Filtrati: ${filteredOut}</span>` : ''}
                         ${data.errors?.google ? `<br><small class="text-danger">Errore Google: ${data.errors.google}</small>` : ''}
                         ${data.errors?.ebay ? `<br><small class="text-danger">Errore eBay: ${data.errors.ebay}</small>` : ''}
+                    </div>
+                `;
+            } else if (filteredOut > 0) {
+                summaryHtml = `
+                    <div class="mb-3">
+                        <span class="badge bg-success">Validi: ${data.results.length}</span>
+                        <span class="badge bg-secondary ms-2">Filtrati: ${filteredOut}</span>
+                        <small class="text-muted ms-2">(rimossi: bundle, lotti, bustine singole, ecc.)</small>
                     </div>
                 `;
             }

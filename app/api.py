@@ -312,6 +312,7 @@ def test_search():
     data = request.json
     source = data.get('source', 'google_shopping')
     query = data.get('query', '')
+    filter_enabled = data.get('filter', True)
     
     if not query:
         return jsonify({'error': 'Query required'}), 400
@@ -320,20 +321,26 @@ def test_search():
     
     # Se source è 'both', cerca su entrambe le fonti
     if source == 'both':
-        google_result = collector.test_search('google_shopping', query)
-        ebay_result = collector.test_search('ebay', query)
+        google_result = collector.test_search('google_shopping', query, filter_results=filter_enabled)
+        ebay_result = collector.test_search('ebay', query, filter_results=filter_enabled)
         
         all_results = []
+        total_filtered = 0
+        total_raw = 0
         
         # Aggiungi risultati Google Shopping
         for r in google_result.get('results', []):
             r['source'] = 'google_shopping'
             all_results.append(r)
+        total_filtered += google_result.get('filtered_out', 0)
+        total_raw += google_result.get('total_raw', len(google_result.get('results', [])))
         
         # Aggiungi risultati eBay
         for r in ebay_result.get('results', []):
             r['source'] = 'ebay'
             all_results.append(r)
+        total_filtered += ebay_result.get('filtered_out', 0)
+        total_raw += ebay_result.get('total_raw', len(ebay_result.get('results', [])))
         
         # Ordina per prezzo
         all_results.sort(key=lambda x: x.get('price', 999999))
@@ -341,6 +348,8 @@ def test_search():
         return jsonify({
             'results': all_results,
             'total': len(all_results),
+            'total_raw': total_raw,
+            'filtered_out': total_filtered,
             'google_count': len(google_result.get('results', [])),
             'ebay_count': len(ebay_result.get('results', [])),
             'errors': {
@@ -349,7 +358,7 @@ def test_search():
             }
         })
     
-    result = collector.test_search(source, query)
+    result = collector.test_search(source, query, filter_results=filter_enabled)
     return jsonify(result)
 
 @api_bp.route('/collect-all', methods=['POST'])
