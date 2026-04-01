@@ -10,10 +10,16 @@ class Product(db.Model):
     sku = db.Column(db.String(100))
     price = db.Column(db.Float)
     image_url = db.Column(db.String(1000))
+    stock_status = db.Column(db.String(50), default='instock')
+    stock_quantity = db.Column(db.Integer, default=0)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)
     updated_at = db.Column(db.DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     
     monitors = db.relationship('Monitor', backref='product', lazy=True, cascade='all, delete-orphan')
+    
+    @property
+    def is_in_stock(self):
+        return self.stock_status == 'instock'
     
     def to_dict(self):
         return {
@@ -23,6 +29,9 @@ class Product(db.Model):
             'sku': self.sku,
             'price': self.price,
             'image_url': self.image_url,
+            'stock_status': self.stock_status,
+            'stock_quantity': self.stock_quantity,
+            'is_in_stock': self.is_in_stock,
         }
 
 

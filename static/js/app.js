@@ -32,7 +32,7 @@ async function syncProducts() {
         
         resultDiv.style.display = 'block';
         resultDiv.className = 'alert alert-success';
-        resultDiv.innerHTML = `<i class="bi bi-check-circle"></i> Sincronizzati ${data.synced} prodotti`;
+        resultDiv.innerHTML = `<i class="bi bi-check-circle"></i> Sincronizzati ${data.synced} prodotti (${data.in_stock || 0} disponibili, ${data.out_of_stock || 0} esauriti)`;
     } catch (e) {
         resultDiv.style.display = 'block';
         resultDiv.className = 'alert alert-danger';
@@ -96,11 +96,37 @@ async function testSearch() {
         } else if (data.results.length === 0) {
             resultsDiv.innerHTML = '<div class="alert alert-warning">Nessun risultato trovato</div>';
         } else {
+            // Funzione per ottenere il badge della fonte
+            const getSourceBadge = (src) => {
+                if (src === 'google_shopping') {
+                    return '<span class="badge bg-primary">Google</span>';
+                } else if (src === 'ebay') {
+                    return '<span class="badge bg-warning text-dark">eBay</span>';
+                }
+                return '<span class="badge bg-secondary">?</span>';
+            };
+            
+            // Header con riepilogo fonti (se ricerca su entrambi)
+            let summaryHtml = '';
+            if (source === 'both' && data.google_count !== undefined) {
+                summaryHtml = `
+                    <div class="mb-3">
+                        <span class="badge bg-primary me-2">Google: ${data.google_count}</span>
+                        <span class="badge bg-warning text-dark me-2">eBay: ${data.ebay_count}</span>
+                        <span class="badge bg-dark">Totale: ${data.total}</span>
+                        ${data.errors?.google ? `<br><small class="text-danger">Errore Google: ${data.errors.google}</small>` : ''}
+                        ${data.errors?.ebay ? `<br><small class="text-danger">Errore eBay: ${data.errors.ebay}</small>` : ''}
+                    </div>
+                `;
+            }
+            
             resultsDiv.innerHTML = `
+                ${summaryHtml}
                 <div class="table-responsive">
                     <table class="table table-sm">
                         <thead>
                             <tr>
+                                <th>Fonte</th>
                                 <th>Titolo</th>
                                 <th>Prezzo</th>
                                 <th>Venditore</th>
@@ -109,15 +135,16 @@ async function testSearch() {
                         <tbody>
                             ${data.results.map(r => `
                                 <tr>
-                                    <td><a href="${r.url}" target="_blank">${escapeHtml(r.title.substring(0, 50))}...</a></td>
-                                    <td><strong>€${r.price.toFixed(2)}</strong></td>
+                                    <td>${getSourceBadge(r.source)}</td>
+                                    <td><a href="${r.url}" target="_blank">${escapeHtml((r.title || '').substring(0, 50))}...</a></td>
+                                    <td><strong>€${(r.price || 0).toFixed(2)}</strong></td>
                                     <td>${escapeHtml(r.seller_name || '-')}</td>
                                 </tr>
                             `).join('')}
                         </tbody>
                     </table>
                 </div>
-                <small class="text-muted">Trovati ${data.results.length} risultati</small>
+                <small class="text-muted">Trovati ${data.results.length} risultati${source !== 'both' ? '' : ' (ordinati per prezzo)'}</small>
             `;
         }
     } catch (e) {

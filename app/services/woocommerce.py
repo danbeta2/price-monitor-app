@@ -21,7 +21,7 @@ class WooCommerceService:
             print(f"WooCommerce API error: {e}")
             return None
     
-    def get_products(self, page=1, per_page=20, category=None, search=None):
+    def get_products(self, page=1, per_page=20, category=None, search=None, in_stock_only=False):
         params = {
             'page': page,
             'per_page': per_page,
@@ -34,6 +34,8 @@ class WooCommerceService:
             params['category'] = category
         if search:
             params['search'] = search
+        if in_stock_only:
+            params['stock_status'] = 'instock'
         
         return self._request('products', params) or []
     

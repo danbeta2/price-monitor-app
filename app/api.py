@@ -14,9 +14,10 @@ def get_products():
     per_page = request.args.get('per_page', 20, type=int)
     category = request.args.get('category', type=int)
     search = request.args.get('search', '')
+    in_stock_only = request.args.get('in_stock_only', 'false').lower() == 'true'
     
     wc = WooCommerceService()
-    products = wc.get_products(page=page, per_page=per_page, category=category, search=search)
+    products = wc.get_products(page=page, per_page=per_page, category=category, search=search, in_stock_only=in_stock_only)
     
     return jsonify({
         'products': products,
@@ -35,6 +36,8 @@ def sync_products():
     wc = WooCommerceService()
     page = 1
     synced = 0
+    in_stock = 0
+    out_of_stock = 0
     
     while True:
         products = wc.get_products(page=page, per_page=50)
@@ -51,6 +54,13 @@ def sync_products():
             product.name = wc_product.get('name', '')[:500]
             product.sku = wc_product.get('sku', '')[:100] if wc_product.get('sku') else None
             product.price = float(wc_product.get('price') or 0)
+            product.stock_status = wc_product.get('stock_status', 'instock')
+            product.stock_quantity = wc_product.get('stock_quantity') or 0
+            
+            if product.stock_status == 'instock':
+                in_stock += 1
+            else:
+                out_of_stock += 1
             
             images = wc_product.get('images', [])
             if images:
@@ -63,7 +73,11 @@ def sync_products():
             break
     
     db.session.commit()
-    return jsonify({'synced': synced})
+    return jsonify({
+        'synced': synced,
+        'in_stock': in_stock,
+        'out_of_stock': out_of_stock,
+    })
 
 @api_bp.route('/monitors', methods=['GET'])
 def get_monitors():
@@ -269,8 +283,39 @@ def test_search():
         return jsonify({'error': 'Query required'}), 400
     
     collector = PriceCollector()
-    result = collector.test_search(source, query)
     
+    # Se source è 'both', cerca su entrambe le fonti
+    if source == 'both':
+        google_result = collector.test_search('google_shopping', query)
+        ebay_result = collector.test_search('ebay', query)
+        
+        all_results = []
+        
+        # Aggiungi risultati Google Shopping
+        for r in google_result.get('results', []):
+            r['source'] = 'google_shopping'
+            all_results.append(r)
+        
+        # Aggiungi risultati eBay
+        for r in ebay_result.get('results', []):
+            r['source'] = 'ebay'
+            all_results.append(r)
+        
+        # Ordina per prezzo
+        all_results.sort(key=lambda x: x.get('price', 999999))
+        
+        return jsonify({
+            'results': all_results,
+            'total': len(all_results),
+            'google_count': len(google_result.get('results', [])),
+            'ebay_count': len(ebay_result.get('results', [])),
+            'errors': {
+                'google': google_result.get('error'),
+                'ebay': ebay_result.get('error'),
+            }
+        })
+    
+    result = collector.test_search(source, query)
     return jsonify(result)
 
 @api_bp.route('/collect-all', methods=['POST'])

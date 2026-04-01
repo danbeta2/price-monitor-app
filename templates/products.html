@@ -20,7 +20,7 @@
                     <option value="">Tutte le categorie</option>
                 </select>
             </div>
-            <div class="col-md-4">
+            <div class="col-md-3">
                 <label class="form-label">Cerca</label>
                 <input type="text" class="form-control" id="filter-search" placeholder="Nome prodotto...">
             </div>
@@ -31,9 +31,16 @@
                     <option value="ebay">eBay</option>
                 </select>
             </div>
-            <div class="col-md-3">
+            <div class="col-md-2">
+                <label class="form-label">Stock</label>
+                <select class="form-select" id="filter-stock">
+                    <option value="in_stock">Solo disponibili</option>
+                    <option value="all">Tutti</option>
+                </select>
+            </div>
+            <div class="col-md-2">
                 <button class="btn btn-primary w-100" id="btn-load-products">
-                    <i class="bi bi-search"></i> Carica Prodotti
+                    <i class="bi bi-search"></i> Carica
                 </button>
             </div>
         </div>
@@ -116,10 +123,12 @@ async function loadCategories() {
 async function loadProducts() {
     const category = document.getElementById('filter-category').value;
     const search = document.getElementById('filter-search').value;
+    const stockFilter = document.getElementById('filter-stock').value;
     
     const params = new URLSearchParams({ per_page: 50 });
     if (category) params.append('category', category);
     if (search) params.append('search', search);
+    if (stockFilter === 'in_stock') params.append('in_stock_only', 'true');
     
     document.getElementById('products-list').innerHTML = '<p class="text-center"><span class="spinner-border"></span> Caricamento...</p>';
     
@@ -137,18 +146,27 @@ function renderProducts(products) {
         return;
     }
     
-    container.innerHTML = products.map(p => `
-        <div class="product-item ${selectedProducts[p.id] ? 'selected' : ''}" data-id="${p.id}" data-name="${escapeHtml(p.name)}">
-            <img src="${p.images?.[0]?.src || '/static/img/placeholder.png'}" alt="" class="product-thumb">
-            <div class="product-info">
-                <div class="product-name">${escapeHtml(p.name)}</div>
-                <div class="product-meta">
-                    ${p.sku ? `SKU: ${p.sku} |` : ''} 
-                    <strong>€${parseFloat(p.price || 0).toFixed(2)}</strong>
+    container.innerHTML = products.map(p => {
+        const isOutOfStock = p.stock_status !== 'instock';
+        const stockBadge = isOutOfStock 
+            ? '<span class="badge bg-danger ms-2">Esaurito</span>' 
+            : '<span class="badge bg-success ms-2">Disponibile</span>';
+        
+        return `
+            <div class="product-item ${selectedProducts[p.id] ? 'selected' : ''} ${isOutOfStock ? 'out-of-stock' : ''}" 
+                 data-id="${p.id}" data-name="${escapeHtml(p.name)}">
+                <img src="${p.images?.[0]?.src || '/static/img/placeholder.png'}" alt="" class="product-thumb">
+                <div class="product-info">
+                    <div class="product-name">${escapeHtml(p.name)} ${stockBadge}</div>
+                    <div class="product-meta">
+                        ${p.sku ? `SKU: ${p.sku} |` : ''} 
+                        <strong>€${parseFloat(p.price || 0).toFixed(2)}</strong>
+                        ${p.stock_quantity ? ` | Qty: ${p.stock_quantity}` : ''}
+                    </div>
                 </div>
             </div>
-        </div>
-    `).join('');
+        `;
+    }).join('');
     
     container.querySelectorAll('.product-item').forEach(item => {
         item.addEventListener('click', () => toggleProduct(item));
