@@ -59,18 +59,18 @@ def sync_products():
         }), 400
     
     synced = 0
-    in_stock = 0
-    out_of_stock = 0
+    skipped_out_of_stock = 0
     
-    print("[Sync] Starting sync...")
+    print("[Sync] Starting sync (SOLO prodotti disponibili)...")
     
     try:
         page = 1
         max_pages = 10  # Limite sicurezza: max 500 prodotti
         
         while page <= max_pages:
-            print(f"[Sync] Fetching page {page}...")
-            batch = wc.get_products(page=page, per_page=50)
+            print(f"[Sync] Fetching page {page} (in_stock_only=True)...")
+            # SOLO prodotti disponibili!
+            batch = wc.get_products(page=page, per_page=50, in_stock_only=True)
             
             if batch is None and page == 1:
                 return jsonify({
@@ -93,13 +93,8 @@ def sync_products():
                 product.name = wc_product.get('name', '')[:500]
                 product.sku = wc_product.get('sku', '')[:100] if wc_product.get('sku') else None
                 product.price = float(wc_product.get('price') or 0)
-                product.stock_status = wc_product.get('stock_status', 'instock')
+                product.stock_status = 'instock'  # Sempre instock perché filtriamo
                 product.stock_quantity = wc_product.get('stock_quantity') or 0
-                
-                if product.stock_status == 'instock':
-                    in_stock += 1
-                else:
-                    out_of_stock += 1
                 
                 images = wc_product.get('images', [])
                 if images:
@@ -116,12 +111,28 @@ def sync_products():
             
             page += 1
         
-        print(f"[Sync] Completed: {synced} synced, {in_stock} in stock, {out_of_stock} out of stock")
+        print(f"[Sync] Completed: {synced} prodotti disponibili sincronizzati")
+        
+        # Rimuovi prodotti esauriti dal database (senza monitor attivi)
+        removed = 0
+        out_of_stock_products = Product.query.filter(Product.stock_status != 'instock').all()
+        for p in out_of_stock_products:
+            # Controlla se ha monitor attivi
+            active_monitors = Monitor.query.filter_by(product_id=p.id, is_active=True).count()
+            if active_monitors == 0:
+                db.session.delete(p)
+                removed += 1
+        
+        if removed > 0:
+            db.session.commit()
+            print(f"[Sync] Removed {removed} out-of-stock products without monitors")
         
         return jsonify({
             'synced': synced,
-            'in_stock': in_stock,
-            'out_of_stock': out_of_stock,
+            'in_stock': synced,
+            'out_of_stock': 0,
+            'removed': removed,
+            'message': f'Sincronizzati {synced} prodotti disponibili' + (f', rimossi {removed} esauriti' if removed > 0 else '')
         })
         
     except Exception as e:
@@ -132,7 +143,7 @@ def sync_products():
         return jsonify({
             'error': 'Errore durante la sincronizzazione',
             'details': str(e),
-            'synced': synced  # Ritorna quanti ne ha già sincronizzati
+            'synced': synced
         }), 500
 
 @api_bp.route('/monitors', methods=['GET'])
