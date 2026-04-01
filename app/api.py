@@ -31,14 +31,30 @@ def get_categories():
     categories = wc.get_categories()
     return jsonify({'categories': categories})
 
+@api_bp.route('/debug/config')
+def debug_config():
+    """Endpoint di debug per verificare le configurazioni"""
+    from flask import current_app
+    return jsonify({
+        'wc_url': bool(current_app.config.get('WC_URL')),
+        'wc_url_value': (current_app.config.get('WC_URL', '')[:30] + '...') if current_app.config.get('WC_URL') else None,
+        'wc_key': bool(current_app.config.get('WC_CONSUMER_KEY')),
+        'wc_key_prefix': current_app.config.get('WC_CONSUMER_KEY', '')[:10] + '...' if current_app.config.get('WC_CONSUMER_KEY') else None,
+        'wc_secret': bool(current_app.config.get('WC_CONSUMER_SECRET')),
+        'serpapi': bool(current_app.config.get('SERPAPI_KEY')),
+        'ebay_id': bool(current_app.config.get('EBAY_CLIENT_ID')),
+        'ebay_secret': bool(current_app.config.get('EBAY_CLIENT_SECRET')),
+    })
+
 @api_bp.route('/sync-products', methods=['POST'])
 def sync_products():
     wc = WooCommerceService()
     
     if not wc.is_configured():
+        from flask import current_app
         return jsonify({
             'error': 'WooCommerce non configurato',
-            'details': 'Verifica che WC_URL, WC_CONSUMER_KEY e WC_CONSUMER_SECRET siano impostati su Railway',
+            'details': f"WC_URL: {'✓' if current_app.config.get('WC_URL') else '✗'}, KEY: {'✓' if current_app.config.get('WC_CONSUMER_KEY') else '✗'}, SECRET: {'✓' if current_app.config.get('WC_CONSUMER_SECRET') else '✗'}",
             'synced': 0
         }), 400
     
