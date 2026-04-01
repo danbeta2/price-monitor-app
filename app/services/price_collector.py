@@ -30,7 +30,13 @@ class PriceCollector:
         'pokemon', 'pokémon', 'tcg', 'card', 'cards', 'carte',
         'yu', 'gi', 'oh', 'yugioh',
         'magic', 'mtg', 'gathering',
-        'booster', 'pack', 'box', 'display', 'bundle', 'collection',  # Comuni in titoli
+    }
+    
+    # Parole chiave che devono matchare se presenti nella query
+    IMPORTANT_KEYWORDS = {
+        'booster', 'box', 'display', 'bundle', 'etb', 'elite', 'trainer',
+        'blister', 'pack', 'tin', 'collection', 'premium', 'ultra',
+        '36', '24', '18', '12', '10', '6', '3',  # Numeri comuni per quantità
     }
     
     def __init__(self):
@@ -136,21 +142,39 @@ class PriceCollector:
     def _match_keywords(self, search_query, title):
         """
         Verifica che le parole chiave importanti della query siano presenti nel titolo.
-        Richiede che almeno il 50% delle parole significative siano presenti.
+        Le IMPORTANT_KEYWORDS devono matchare se presenti nella query.
         """
-        # Normalizza e splitta la query
-        query_words = re.findall(r'\w+', search_query.lower())
+        query_lower = search_query.lower()
+        title_lower = title.lower()
         
-        # Rimuovi parole da ignorare (comuni in tutti i titoli TCG)
-        significant_words = [w for w in query_words if w.lower() not in self.IGNORE_WORDS and len(w) > 2]
+        # Estrai tutte le parole dalla query
+        query_words = re.findall(r'\w+', query_lower)
+        
+        # 1. Verifica le parole importanti (DEVONO matchare se nella query)
+        for word in query_words:
+            if word in self.IMPORTANT_KEYWORDS:
+                if word not in title_lower:
+                    # Eccezione: "box" può essere "booster box" -> ok se c'è "booster"
+                    if word == 'box' and 'booster' in query_lower and 'booster' in title_lower:
+                        continue
+                    return False
+        
+        # 2. Verifica che non ci siano keyword importanti nel titolo che NON sono nella query
+        # Es: query="Booster Box" ma titolo="Gift Bundle" -> INVALID perché "bundle" è importante ma non nella query
+        for word in self.IMPORTANT_KEYWORDS:
+            if word in title_lower and word not in query_lower:
+                # Il titolo ha una keyword importante che non è nella query
+                # Questo potrebbe essere un prodotto diverso
+                if word in ['bundle', 'etb', 'elite', 'trainer', 'tin', 'blister', 'collection', 'premium']:
+                    return False
+        
+        # 3. Verifica parole significative (almeno 50% match)
+        significant_words = [w for w in query_words if w not in self.IGNORE_WORDS and len(w) > 2]
         
         if not significant_words:
             return True
         
-        # Conta quante parole significative sono nel titolo
-        matches = sum(1 for word in significant_words if word in title)
-        
-        # Richiedi almeno 50% di match (più permissivo) - minimo 1 parola
+        matches = sum(1 for word in significant_words if word in title_lower)
         required_matches = max(1, int(len(significant_words) * 0.5))
         
         return matches >= required_matches

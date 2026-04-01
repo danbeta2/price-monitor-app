@@ -42,7 +42,7 @@ class EbayService:
             print(f"eBay auth error: {e}")
             return None
     
-    def search(self, query, num_results=20):
+    def search(self, query, num_results=50):
         if not self.is_configured():
             return {'error': 'eBay not configured', 'results': []}
         
@@ -56,10 +56,12 @@ class EbayService:
             'Content-Type': 'application/json',
         }
         
+        # conditionIds: 1000=New, 1500=New other, 2000=Certified refurb, 2500=Seller refurb, 3000=Used
+        # deliveryCountry: filtra per spedizione in Italia
         params = {
             'q': query,
-            'limit': num_results,
-            'filter': 'conditionIds:{1000|1500|2000|2500|3000}',
+            'limit': min(num_results, 200),  # Max 200 per eBay
+            'filter': 'conditionIds:{1000|1500},deliveryCountry:IT',
         }
         
         try:

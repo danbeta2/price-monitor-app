@@ -10,7 +10,7 @@ class SerpAPIService:
     def is_configured(self):
         return bool(self.api_key)
     
-    def search(self, query, num_results=20):
+    def search(self, query, num_results=50):
         if not self.is_configured():
             return {'error': 'SerpAPI not configured', 'results': []}
         
@@ -20,7 +20,7 @@ class SerpAPIService:
             'api_key': self.api_key,
             'gl': 'it',
             'hl': 'it',
-            'num': num_results,
+            'num': min(num_results, 100),  # Max 100 per SerpAPI
         }
         
         try:
