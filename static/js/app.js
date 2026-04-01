@@ -31,12 +31,21 @@ async function syncProducts() {
         const data = await res.json();
         
         resultDiv.style.display = 'block';
-        resultDiv.className = 'alert alert-success';
-        resultDiv.innerHTML = `<i class="bi bi-check-circle"></i> Sincronizzati ${data.synced} prodotti (${data.in_stock || 0} disponibili, ${data.out_of_stock || 0} esauriti)`;
+        
+        if (data.error) {
+            resultDiv.className = 'alert alert-danger';
+            resultDiv.innerHTML = `<i class="bi bi-x-circle"></i> <strong>${data.error}</strong><br><small>${data.details || ''}</small>`;
+        } else if (data.synced === 0) {
+            resultDiv.className = 'alert alert-warning';
+            resultDiv.innerHTML = `<i class="bi bi-exclamation-triangle"></i> ${data.message || 'Nessun prodotto trovato'}`;
+        } else {
+            resultDiv.className = 'alert alert-success';
+            resultDiv.innerHTML = `<i class="bi bi-check-circle"></i> Sincronizzati ${data.synced} prodotti (${data.in_stock || 0} disponibili, ${data.out_of_stock || 0} esauriti)`;
+        }
     } catch (e) {
         resultDiv.style.display = 'block';
         resultDiv.className = 'alert alert-danger';
-        resultDiv.innerHTML = `<i class="bi bi-x-circle"></i> Errore: ${e.message}`;
+        resultDiv.innerHTML = `<i class="bi bi-x-circle"></i> Errore di rete: ${e.message}`;
     }
     
     btn.disabled = false;

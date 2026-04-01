@@ -34,17 +34,55 @@ def get_categories():
 @api_bp.route('/sync-products', methods=['POST'])
 def sync_products():
     wc = WooCommerceService()
+    
+    if not wc.is_configured():
+        return jsonify({
+            'error': 'WooCommerce non configurato',
+            'details': 'Verifica che WC_URL, WC_CONSUMER_KEY e WC_CONSUMER_SECRET siano impostati su Railway',
+            'synced': 0
+        }), 400
+    
     page = 1
     synced = 0
     in_stock = 0
     out_of_stock = 0
     
-    while True:
-        products = wc.get_products(page=page, per_page=50)
-        if not products:
-            break
-        
-        for wc_product in products:
+    # Prima chiamata per verificare la connessione
+    first_batch = wc.get_products(page=1, per_page=50)
+    
+    if first_batch is None:
+        return jsonify({
+            'error': 'Errore connessione WooCommerce',
+            'details': wc.last_error or 'Impossibile connettersi a WooCommerce API',
+            'synced': 0
+        }), 500
+    
+    if not first_batch:
+        return jsonify({
+            'synced': 0,
+            'in_stock': 0,
+            'out_of_stock': 0,
+            'message': 'Nessun prodotto trovato su WooCommerce'
+        })
+    
+    # Processa prima batch
+    products_to_process = [first_batch]
+    
+    # Carica altre pagine se necessario
+    if len(first_batch) == 50:
+        page = 2
+        while True:
+            more_products = wc.get_products(page=page, per_page=50)
+            if not more_products:
+                break
+            products_to_process.append(more_products)
+            page += 1
+            if len(more_products) < 50:
+                break
+    
+    # Processa tutti i prodotti
+    for batch in products_to_process:
+        for wc_product in batch:
             product = Product.query.filter_by(wc_product_id=wc_product['id']).first()
             
             if not product:
@@ -67,10 +105,6 @@ def sync_products():
                 product.image_url = images[0].get('src', '')[:1000]
             
             synced += 1
-        
-        page += 1
-        if len(products) < 50:
-            break
     
     db.session.commit()
     return jsonify({
