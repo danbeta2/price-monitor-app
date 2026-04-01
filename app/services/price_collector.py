@@ -7,18 +7,31 @@ from app.services.ebay import EbayService
 
 class PriceCollector:
     
+    # Keywords che indicano prodotti NON desiderati (lotti, usati, falsi, lingue straniere)
     NEGATIVE_KEYWORDS = [
-        'lot', 'lotto', '2x', '3x', '4x', '5x', 'x2', 'x3', 'x4', 'x5',
-        'bundle', 'empty', 'no cards', 'senza carte',
-        'opened', 'used', 'usato', 'fake', 'replica', 'proxy', 'custom',
-        'japanese', 'jap', 'giapponese', 'korean', 'coreano', 'chinese', 'cinese', 
-        'repack', 'display', 'box', 'case', 'master', 'booster box',
-        'busta', 'bustina', 'bustine', 'buste', 'singola', 'singolo',
-        'coppia', 'doppio', 'doppia', 'triple', 'triplo'
+        'lot ', ' lot', 'lotto',  # Con spazi per evitare match parziali
+        '2x', '3x', '4x', '5x', 'x2 ', 'x3 ', 'x4 ', 'x5 ',
+        'empty', 'no cards', 'senza carte', 'vuoto',
+        'opened', 'aperto', 'used', 'usato', 'usata',
+        'fake', 'replica', 'proxy', 'custom', 'unofficial',
+        'japanese', 'japan', 'jap ', 'giapponese', 'giapp',
+        'korean', 'coreano', 'chinese', 'cinese',
+        'repack', 'repacked', 'resealed',
+        'busta singola', 'bustina singola', 'singola busta',
+        'raw', 'psa', 'bgs', 'cgc',  # Carte gradate
     ]
     
     # Parole da ignorare nel matching (articoli, preposizioni, ecc.)
-    IGNORE_WORDS = {'di', 'del', 'della', 'dei', 'degli', 'delle', 'e', 'o', 'a', 'da', 'in', 'con', 'su', 'per', 'tra', 'fra', 'the', 'a', 'an', 'of', 'and', 'or', '-', '–', ':', '(', ')', '[', ']'}
+    IGNORE_WORDS = {
+        'di', 'del', 'della', 'dei', 'degli', 'delle', 
+        'e', 'o', 'a', 'da', 'in', 'con', 'su', 'per', 'tra', 'fra',
+        'the', 'an', 'of', 'and', 'or', 'for', 'to',
+        '-', '–', ':', '(', ')', '[', ']',
+        'pokemon', 'pokémon', 'tcg', 'card', 'cards', 'carte',
+        'yu', 'gi', 'oh', 'yugioh',
+        'magic', 'mtg', 'gathering',
+        'booster', 'pack', 'box', 'display', 'bundle', 'collection',  # Comuni in titoli
+    }
     
     def __init__(self):
         self.serpapi = SerpAPIService()
@@ -123,13 +136,13 @@ class PriceCollector:
     def _match_keywords(self, search_query, title):
         """
         Verifica che le parole chiave importanti della query siano presenti nel titolo.
-        Richiede che almeno l'80% delle parole significative siano presenti.
+        Richiede che almeno il 50% delle parole significative siano presenti.
         """
         # Normalizza e splitta la query
         query_words = re.findall(r'\w+', search_query.lower())
         
-        # Rimuovi parole da ignorare
-        significant_words = [w for w in query_words if w not in self.IGNORE_WORDS and len(w) > 2]
+        # Rimuovi parole da ignorare (comuni in tutti i titoli TCG)
+        significant_words = [w for w in query_words if w.lower() not in self.IGNORE_WORDS and len(w) > 2]
         
         if not significant_words:
             return True
@@ -137,10 +150,10 @@ class PriceCollector:
         # Conta quante parole significative sono nel titolo
         matches = sum(1 for word in significant_words if word in title)
         
-        # Richiedi almeno 80% di match (minimo 2 parole se ne abbiamo abbastanza)
-        required_matches = max(2, int(len(significant_words) * 0.8))
+        # Richiedi almeno 50% di match (più permissivo) - minimo 1 parola
+        required_matches = max(1, int(len(significant_words) * 0.5))
         
-        return matches >= min(required_matches, len(significant_words))
+        return matches >= required_matches
     
     def _filter_results(self, results, search_query, your_price=None, tolerance=50):
         """

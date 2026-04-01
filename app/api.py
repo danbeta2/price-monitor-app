@@ -122,12 +122,26 @@ def get_monitors():
         data = m.to_dict()
         data['product'] = m.product.to_dict() if m.product else None
         
+        # Prima cerca tra i validi
         best_price = PriceRecord.query.filter_by(
             monitor_id=m.id, is_valid=True
         ).order_by(PriceRecord.price.asc()).first()
         
+        # Se non ci sono validi, prendi comunque il miglior prezzo (per riferimento)
+        if not best_price:
+            best_price = PriceRecord.query.filter_by(
+                monitor_id=m.id
+            ).order_by(PriceRecord.price.asc()).first()
+            data['best_price_unvalidated'] = True
+        else:
+            data['best_price_unvalidated'] = False
+        
         data['best_price'] = best_price.price if best_price else None
         data['best_seller'] = best_price.seller_name if best_price else None
+        
+        # Conta record totali e validi
+        data['total_records'] = PriceRecord.query.filter_by(monitor_id=m.id).count()
+        data['valid_records'] = PriceRecord.query.filter_by(monitor_id=m.id, is_valid=True).count()
         
         result.append(data)
     
@@ -256,11 +270,21 @@ def collect_prices(monitor_id):
 @api_bp.route('/monitors/<int:monitor_id>/prices')
 def get_monitor_prices(monitor_id):
     monitor = Monitor.query.get_or_404(monitor_id)
+    show_all = request.args.get('show_all', 'false').lower() == 'true'
     
-    prices = PriceRecord.query.filter_by(
-        monitor_id=monitor_id, is_valid=True
-    ).order_by(PriceRecord.fetched_at.desc()).limit(50).all()
+    # Get prices - tutti o solo validi
+    query = PriceRecord.query.filter_by(monitor_id=monitor_id)
+    if not show_all:
+        query = query.filter_by(is_valid=True)
+    prices = query.order_by(PriceRecord.fetched_at.desc()).limit(50).all()
     
+    # Se non ci sono validi, mostra tutti
+    if len(prices) == 0 and not show_all:
+        prices = PriceRecord.query.filter_by(
+            monitor_id=monitor_id
+        ).order_by(PriceRecord.fetched_at.desc()).limit(50).all()
+    
+    # Stats su tutti i record (non solo validi) per avere sempre dati
     stats = db.session.query(
         func.min(PriceRecord.price).label('min_price'),
         func.max(PriceRecord.price).label('max_price'),
@@ -268,11 +292,20 @@ def get_monitor_prices(monitor_id):
         func.count(PriceRecord.id).label('total'),
         func.count(func.distinct(PriceRecord.seller_name)).label('sellers'),
     ).filter(
+        PriceRecord.monitor_id == monitor_id
+    ).first()
+    
+    # Stats solo validi per confronto
+    valid_stats = db.session.query(
+        func.count(PriceRecord.id).label('valid_count'),
+    ).filter(
         PriceRecord.monitor_id == monitor_id,
         PriceRecord.is_valid == True
     ).first()
     
     thirty_days_ago = datetime.utcnow() - timedelta(days=30)
+    
+    # History - prova prima con solo validi, poi tutti
     history = db.session.query(
         func.date(PriceRecord.fetched_at).label('date'),
         func.min(PriceRecord.price).label('min_price'),
@@ -280,7 +313,6 @@ def get_monitor_prices(monitor_id):
         func.max(PriceRecord.price).label('max_price'),
     ).filter(
         PriceRecord.monitor_id == monitor_id,
-        PriceRecord.is_valid == True,
         PriceRecord.fetched_at >= thirty_days_ago,
     ).group_by(func.date(PriceRecord.fetched_at)).order_by(func.date(PriceRecord.fetched_at)).all()
     
@@ -291,6 +323,7 @@ def get_monitor_prices(monitor_id):
             'max_price': float(stats.max_price) if stats.max_price else None,
             'avg_price': round(float(stats.avg_price), 2) if stats.avg_price else None,
             'total': stats.total,
+            'valid_count': valid_stats.valid_count if valid_stats else 0,
             'sellers': stats.sellers,
         },
         'history': [

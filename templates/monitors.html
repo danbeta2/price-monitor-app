@@ -105,9 +105,16 @@ async function loadMonitors() {
             ((product.price - m.best_price) / product.price * 100).toFixed(1) : null;
         
         let priceClass = '';
+        let priceNote = '';
         if (priceDiff !== null) {
             priceClass = priceDiff > 0 ? 'text-success' : (priceDiff < -5 ? 'text-danger' : '');
         }
+        if (m.best_price_unvalidated) {
+            priceNote = '<br><small class="text-warning">⚠️ non validato</small>';
+        }
+        
+        const recordsInfo = m.total_records > 0 ? 
+            `<small class="text-muted">${m.valid_records}/${m.total_records} validi</small>` : '';
         
         return `
             <tr>
@@ -131,6 +138,8 @@ async function loadMonitors() {
                 <td class="${priceClass}">
                     ${m.best_price ? `€${m.best_price.toFixed(2)}` : '-'}
                     ${priceDiff !== null ? `<small>(${priceDiff > 0 ? '+' : ''}${priceDiff}%)</small>` : ''}
+                    ${priceNote}
+                    <br>${recordsInfo}
                 </td>
                 <td>${m.last_run_at ? new Date(m.last_run_at).toLocaleString('it-IT') : 'Mai'}</td>
                 <td>
