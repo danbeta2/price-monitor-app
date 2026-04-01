@@ -175,6 +175,17 @@ async function viewPrices(monitorId) {
     if (data.history.length > 0) {
         renderChart(data.history, data.your_price);
     }
+    
+    // Toggle per mostrare/nascondere prezzi non validi
+    const toggle = document.getElementById('showAllPrices');
+    if (toggle) {
+        toggle.addEventListener('change', function() {
+            const rows = document.querySelectorAll('tr[data-valid="false"]');
+            rows.forEach(row => {
+                row.style.display = this.checked ? '' : 'none';
+            });
+        });
+    }
 }
 
 function renderPriceModal(data) {
@@ -258,38 +269,55 @@ function renderPriceModal(data) {
     
     // Recent prices table
     if (data.prices.length > 0) {
+        const validCount = data.stats.valid_count || data.prices.filter(p => p.is_valid).length;
+        const totalCount = data.stats.total || data.prices.length;
+        
         html += `
-            <h5>Ultimi prezzi rilevati</h5>
-            <div class="table-responsive">
+            <div class="d-flex justify-content-between align-items-center mb-3">
+                <h5 class="mb-0">Prezzi rilevati (${validCount} validi su ${totalCount})</h5>
+                <div class="form-check form-switch">
+                    <input class="form-check-input" type="checkbox" id="showAllPrices" checked>
+                    <label class="form-check-label small" for="showAllPrices">Mostra tutti</label>
+                </div>
+            </div>
+            <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
                 <table class="table table-sm">
                     <thead>
                         <tr>
+                            <th></th>
                             <th>Titolo</th>
                             <th>Prezzo</th>
                             <th>vs Tuo</th>
                             <th>Venditore</th>
-                            <th>Data</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${data.prices.map(p => {
                             const diff = data.your_price ? (p.price - data.your_price) : null;
-                            const diffClass = diff !== null ? (diff < 0 ? 'text-danger' : 'text-success') : '';
+                            const diffClass = diff !== null ? (diff < 0 ? 'text-success' : 'text-danger') : '';
+                            const validBadge = p.is_valid 
+                                ? '<span class="badge bg-success" title="Valido">✓</span>' 
+                                : '<span class="badge bg-secondary" title="Filtrato">✗</span>';
+                            const rowClass = p.is_valid ? '' : 'opacity-50';
                             return `
-                                <tr>
-                                    <td><a href="${p.url}" target="_blank">${escapeHtml(p.title.substring(0, 40))}...</a></td>
+                                <tr class="${rowClass}" data-valid="${p.is_valid}">
+                                    <td>${validBadge}</td>
+                                    <td><a href="${p.url}" target="_blank" title="${escapeHtml(p.title)}">${escapeHtml(p.title.substring(0, 50))}...</a></td>
                                     <td><strong>€${p.price.toFixed(2)}</strong></td>
                                     <td class="${diffClass}">
                                         ${diff !== null ? `${diff > 0 ? '+' : ''}€${diff.toFixed(2)}` : '-'}
                                     </td>
                                     <td>${escapeHtml(p.seller_name || '-')}</td>
-                                    <td>${new Date(p.fetched_at).toLocaleString('it-IT')}</td>
                                 </tr>
                             `;
                         }).join('')}
                     </tbody>
                 </table>
             </div>
+            <small class="text-muted">
+                <span class="badge bg-success">✓</span> = prodotto corretto | 
+                <span class="badge bg-secondary">✗</span> = filtrato (bundle, lotto, lingua diversa, ecc.)
+            </small>
         `;
     } else {
         html += '<p class="text-center text-muted">Nessun prezzo ancora rilevato. Esegui una raccolta.</p>';
