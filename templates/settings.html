@@ -1,0 +1,103 @@
+{% extends "base.html" %}
+
+{% block title %}Impostazioni - Price Monitor{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="h3"><i class="bi bi-gear"></i> Impostazioni</h1>
+        <p class="text-muted">Stato delle configurazioni API</p>
+    </div>
+</div>
+
+<div class="row">
+    <div class="col-md-6">
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-shop"></i> WooCommerce</h5>
+            </div>
+            <div class="card-body">
+                {% if sources_configured.woocommerce %}
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle"></i> Connesso
+                </div>
+                {% else %}
+                <div class="alert alert-danger">
+                    <i class="bi bi-x-circle"></i> Non configurato
+                </div>
+                {% endif %}
+                <p class="text-muted small">
+                    Configura le variabili d'ambiente:<br>
+                    <code>WC_URL</code>, <code>WC_CONSUMER_KEY</code>, <code>WC_CONSUMER_SECRET</code>
+                </p>
+            </div>
+        </div>
+        
+        <div class="card mb-4">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-google"></i> Google Shopping (SerpAPI)</h5>
+            </div>
+            <div class="card-body">
+                {% if sources_configured.google_shopping %}
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle"></i> Configurato
+                </div>
+                {% else %}
+                <div class="alert alert-danger">
+                    <i class="bi bi-x-circle"></i> Non configurato
+                </div>
+                {% endif %}
+                <p class="text-muted small">
+                    Variabile d'ambiente: <code>SERPAPI_KEY</code><br>
+                    Ottieni la key da <a href="https://serpapi.com" target="_blank">serpapi.com</a>
+                </p>
+            </div>
+        </div>
+        
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-bag"></i> eBay</h5>
+            </div>
+            <div class="card-body">
+                {% if sources_configured.ebay %}
+                <div class="alert alert-success">
+                    <i class="bi bi-check-circle"></i> Configurato
+                </div>
+                {% else %}
+                <div class="alert alert-danger">
+                    <i class="bi bi-x-circle"></i> Non configurato
+                </div>
+                {% endif %}
+                <p class="text-muted small">
+                    Variabili d'ambiente: <code>EBAY_CLIENT_ID</code>, <code>EBAY_CLIENT_SECRET</code><br>
+                    Ottieni le credenziali da <a href="https://developer.ebay.com" target="_blank">developer.ebay.com</a>
+                </p>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-info-circle"></i> Informazioni</h5>
+            </div>
+            <div class="card-body">
+                <h6>Come configurare le variabili d'ambiente</h6>
+                <p>Su Railway, vai su <strong>Variables</strong> nel tuo progetto e aggiungi:</p>
+                <pre class="bg-light p-3 rounded"><code>WC_URL=https://scimmia.it
+WC_CONSUMER_KEY=ck_xxx
+WC_CONSUMER_SECRET=cs_xxx
+SERPAPI_KEY=xxx
+EBAY_CLIENT_ID=xxx
+EBAY_CLIENT_SECRET=xxx</code></pre>
+                
+                <h6 class="mt-4">Keywords Negative (default)</h6>
+                <p class="small text-muted">
+                    I seguenti termini nei titoli rendono i risultati non validi:<br>
+                    <code>lot, 2x, 3x, bundle, empty, no cards, opened, used, fake, replica, proxy, japanese, korean, repack</code>
+                </p>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}

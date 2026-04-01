@@ -1,0 +1,266 @@
+{% extends "base.html" %}
+
+{% block title %}Prodotti - Price Monitor{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="h3"><i class="bi bi-box-seam"></i> Prodotti WooCommerce</h1>
+        <p class="text-muted">Seleziona i prodotti da monitorare</p>
+    </div>
+</div>
+
+<!-- Filters -->
+<div class="card mb-4">
+    <div class="card-body">
+        <div class="row g-3 align-items-end">
+            <div class="col-md-3">
+                <label class="form-label">Categoria</label>
+                <select class="form-select" id="filter-category">
+                    <option value="">Tutte le categorie</option>
+                </select>
+            </div>
+            <div class="col-md-4">
+                <label class="form-label">Cerca</label>
+                <input type="text" class="form-control" id="filter-search" placeholder="Nome prodotto...">
+            </div>
+            <div class="col-md-2">
+                <label class="form-label">Fonte</label>
+                <select class="form-select" id="filter-source">
+                    <option value="google_shopping">Google Shopping</option>
+                    <option value="ebay">eBay</option>
+                </select>
+            </div>
+            <div class="col-md-3">
+                <button class="btn btn-primary w-100" id="btn-load-products">
+                    <i class="bi bi-search"></i> Carica Prodotti
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Products Grid -->
+<div class="row mb-4">
+    <div class="col-md-8">
+        <div class="card">
+            <div class="card-header d-flex justify-content-between align-items-center">
+                <h5 class="mb-0">Prodotti Disponibili</h5>
+                <div>
+                    <button class="btn btn-sm btn-outline-primary" id="btn-select-all">Seleziona Tutti</button>
+                    <button class="btn btn-sm btn-outline-secondary" id="btn-deselect-all">Deseleziona</button>
+                </div>
+            </div>
+            <div class="card-body" style="max-height: 600px; overflow-y: auto;">
+                <div id="products-list">
+                    <p class="text-center text-muted py-5">
+                        <i class="bi bi-arrow-up-circle" style="font-size: 2rem;"></i><br>
+                        Usa i filtri sopra per caricare i prodotti
+                    </p>
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="col-md-4">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0">Prodotti Selezionati <span class="badge bg-primary" id="selected-count">0</span></h5>
+            </div>
+            <div class="card-body" style="max-height: 400px; overflow-y: auto;">
+                <div id="selected-list">
+                    <p class="text-center text-muted py-3">Nessun prodotto selezionato</p>
+                </div>
+            </div>
+            <div class="card-footer">
+                <div class="mb-3">
+                    <label class="form-label">Tolleranza Prezzo (%)</label>
+                    <input type="number" class="form-control" id="price-tolerance" value="50" min="10" max="200">
+                </div>
+                <button class="btn btn-success w-100" id="btn-create-monitors" disabled>
+                    <i class="bi bi-plus-circle"></i> Crea Monitor
+                </button>
+                <div id="create-result" class="mt-2" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+const selectedProducts = {};
+
+document.addEventListener('DOMContentLoaded', function() {
+    loadCategories();
+    
+    document.getElementById('btn-load-products').addEventListener('click', loadProducts);
+    document.getElementById('btn-select-all').addEventListener('click', selectAll);
+    document.getElementById('btn-deselect-all').addEventListener('click', deselectAll);
+    document.getElementById('btn-create-monitors').addEventListener('click', createMonitors);
+});
+
+async function loadCategories() {
+    const res = await fetch('/api/categories');
+    const data = await res.json();
+    const select = document.getElementById('filter-category');
+    
+    data.categories.forEach(cat => {
+        const option = document.createElement('option');
+        option.value = cat.id;
+        option.textContent = `${cat.name} (${cat.count})`;
+        select.appendChild(option);
+    });
+}
+
+async function loadProducts() {
+    const category = document.getElementById('filter-category').value;
+    const search = document.getElementById('filter-search').value;
+    
+    const params = new URLSearchParams({ per_page: 50 });
+    if (category) params.append('category', category);
+    if (search) params.append('search', search);
+    
+    document.getElementById('products-list').innerHTML = '<p class="text-center"><span class="spinner-border"></span> Caricamento...</p>';
+    
+    const res = await fetch('/api/products?' + params);
+    const data = await res.json();
+    
+    renderProducts(data.products);
+}
+
+function renderProducts(products) {
+    const container = document.getElementById('products-list');
+    
+    if (!products.length) {
+        container.innerHTML = '<p class="text-center text-muted py-5">Nessun prodotto trovato</p>';
+        return;
+    }
+    
+    container.innerHTML = products.map(p => `
+        <div class="product-item ${selectedProducts[p.id] ? 'selected' : ''}" data-id="${p.id}" data-name="${escapeHtml(p.name)}">
+            <img src="${p.images?.[0]?.src || '/static/img/placeholder.png'}" alt="" class="product-thumb">
+            <div class="product-info">
+                <div class="product-name">${escapeHtml(p.name)}</div>
+                <div class="product-meta">
+                    ${p.sku ? `SKU: ${p.sku} |` : ''} 
+                    <strong>€${parseFloat(p.price || 0).toFixed(2)}</strong>
+                </div>
+            </div>
+        </div>
+    `).join('');
+    
+    container.querySelectorAll('.product-item').forEach(item => {
+        item.addEventListener('click', () => toggleProduct(item));
+    });
+}
+
+function toggleProduct(item) {
+    const id = item.dataset.id;
+    const name = item.dataset.name;
+    
+    if (selectedProducts[id]) {
+        delete selectedProducts[id];
+        item.classList.remove('selected');
+    } else {
+        selectedProducts[id] = { id, name, query: name };
+        item.classList.add('selected');
+    }
+    
+    updateSelectedList();
+}
+
+function selectAll() {
+    document.querySelectorAll('.product-item').forEach(item => {
+        const id = item.dataset.id;
+        const name = item.dataset.name;
+        selectedProducts[id] = { id, name, query: name };
+        item.classList.add('selected');
+    });
+    updateSelectedList();
+}
+
+function deselectAll() {
+    Object.keys(selectedProducts).forEach(id => delete selectedProducts[id]);
+    document.querySelectorAll('.product-item').forEach(item => item.classList.remove('selected'));
+    updateSelectedList();
+}
+
+function updateSelectedList() {
+    const count = Object.keys(selectedProducts).length;
+    document.getElementById('selected-count').textContent = count;
+    document.getElementById('btn-create-monitors').disabled = count === 0;
+    
+    const container = document.getElementById('selected-list');
+    
+    if (count === 0) {
+        container.innerHTML = '<p class="text-center text-muted py-3">Nessun prodotto selezionato</p>';
+        return;
+    }
+    
+    container.innerHTML = Object.values(selectedProducts).map(p => `
+        <div class="selected-item">
+            <div class="d-flex justify-content-between align-items-center mb-1">
+                <small class="text-truncate" style="max-width: 200px;">${escapeHtml(p.name)}</small>
+                <button class="btn btn-sm btn-link text-danger p-0" onclick="removeSelected('${p.id}')">×</button>
+            </div>
+            <input type="text" class="form-control form-control-sm" value="${escapeHtml(p.query)}" 
+                   onchange="updateQuery('${p.id}', this.value)" placeholder="Query di ricerca">
+        </div>
+    `).join('');
+}
+
+function removeSelected(id) {
+    delete selectedProducts[id];
+    document.querySelector(`.product-item[data-id="${id}"]`)?.classList.remove('selected');
+    updateSelectedList();
+}
+
+function updateQuery(id, query) {
+    if (selectedProducts[id]) {
+        selectedProducts[id].query = query;
+    }
+}
+
+async function createMonitors() {
+    const btn = document.getElementById('btn-create-monitors');
+    const resultDiv = document.getElementById('create-result');
+    
+    const products = Object.values(selectedProducts).map(p => ({
+        wc_product_id: parseInt(p.id),
+        search_query: p.query
+    }));
+    
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Creazione...';
+    
+    const res = await fetch('/api/monitors/bulk', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+            products,
+            source: document.getElementById('filter-source').value,
+            price_tolerance: parseInt(document.getElementById('price-tolerance').value)
+        })
+    });
+    
+    const data = await res.json();
+    
+    resultDiv.style.display = 'block';
+    resultDiv.className = 'alert alert-success';
+    resultDiv.innerHTML = `<strong>Completato!</strong> ${data.created} creati, ${data.skipped} già esistenti`;
+    
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-plus-circle"></i> Crea Monitor';
+    
+    // Clear selection
+    deselectAll();
+}
+
+function escapeHtml(text) {
+    const div = document.createElement('div');
+    div.textContent = text;
+    return div.innerHTML;
+}
+</script>
+{% endblock %}

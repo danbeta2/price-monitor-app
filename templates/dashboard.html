@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+
+{% block title %}Dashboard - Price Monitor{% endblock %}
+
+{% block content %}
+<div class="row mb-4">
+    <div class="col-12">
+        <h1 class="h3"><i class="bi bi-speedometer2"></i> Dashboard</h1>
+    </div>
+</div>
+
+<!-- Stats Cards -->
+<div class="row mb-4">
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-muted mb-1">Prodotti</h6>
+                        <h2 class="mb-0">{{ total_products }}</h2>
+                    </div>
+                    <div class="stat-icon bg-primary">
+                        <i class="bi bi-box-seam"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-muted mb-1">Monitor Attivi</h6>
+                        <h2 class="mb-0">{{ active_monitors }}</h2>
+                    </div>
+                    <div class="stat-icon bg-success">
+                        <i class="bi bi-eye"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-muted mb-1">Prezzi Rilevati</h6>
+                        <h2 class="mb-0">{{ total_records }}</h2>
+                    </div>
+                    <div class="stat-icon bg-info">
+                        <i class="bi bi-currency-euro"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-3">
+        <div class="card stat-card">
+            <div class="card-body">
+                <div class="d-flex justify-content-between align-items-center">
+                    <div>
+                        <h6 class="text-muted mb-1">Fonti</h6>
+                        <h2 class="mb-0">{{ sources_configured.values()|select|list|length }}/2</h2>
+                    </div>
+                    <div class="stat-icon bg-warning">
+                        <i class="bi bi-diagram-3"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Actions & Sources -->
+<div class="row mb-4">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-lightning"></i> Azioni Rapide</h5>
+            </div>
+            <div class="card-body">
+                <div class="d-grid gap-2">
+                    <button class="btn btn-primary" id="btn-sync-products">
+                        <i class="bi bi-arrow-repeat"></i> Sincronizza Prodotti da WooCommerce
+                    </button>
+                    <button class="btn btn-success" id="btn-collect-all">
+                        <i class="bi bi-collection"></i> Raccogli Prezzi (Tutti i Monitor)
+                    </button>
+                    <a href="/products" class="btn btn-outline-primary">
+                        <i class="bi bi-plus-circle"></i> Aggiungi Monitor
+                    </a>
+                </div>
+                <div id="action-result" class="mt-3" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-plug"></i> Stato Connessioni</h5>
+            </div>
+            <div class="card-body">
+                <ul class="list-group list-group-flush">
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-google"></i> Google Shopping (SerpAPI)</span>
+                        {% if sources_configured.google_shopping %}
+                        <span class="badge bg-success"><i class="bi bi-check-circle"></i> Configurato</span>
+                        {% else %}
+                        <span class="badge bg-danger"><i class="bi bi-x-circle"></i> Non configurato</span>
+                        {% endif %}
+                    </li>
+                    <li class="list-group-item d-flex justify-content-between align-items-center">
+                        <span><i class="bi bi-bag"></i> eBay</span>
+                        {% if sources_configured.ebay %}
+                        <span class="badge bg-success"><i class="bi bi-check-circle"></i> Configurato</span>
+                        {% else %}
+                        <span class="badge bg-danger"><i class="bi bi-x-circle"></i> Non configurato</span>
+                        {% endif %}
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Test Search -->
+<div class="row mb-4">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-search"></i> Test Ricerca</h5>
+            </div>
+            <div class="card-body">
+                <div class="row g-3">
+                    <div class="col-md-3">
+                        <select class="form-select" id="test-source">
+                            <option value="google_shopping">Google Shopping</option>
+                            <option value="ebay">eBay</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6">
+                        <input type="text" class="form-control" id="test-query" placeholder="Es: Pokemon 151 Booster Bundle">
+                    </div>
+                    <div class="col-md-3">
+                        <button class="btn btn-primary w-100" id="btn-test-search">
+                            <i class="bi bi-search"></i> Cerca
+                        </button>
+                    </div>
+                </div>
+                <div id="test-results" class="mt-3" style="display: none;"></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Recent Monitors -->
+{% if recent_monitors %}
+<div class="row">
+    <div class="col-12">
+        <div class="card">
+            <div class="card-header">
+                <h5 class="mb-0"><i class="bi bi-clock-history"></i> Monitor Recenti</h5>
+            </div>
+            <div class="card-body">
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>Prodotto</th>
+                                <th>Query</th>
+                                <th>Fonte</th>
+                                <th>Ultimo Run</th>
+                                <th>Stato</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for monitor in recent_monitors %}
+                            <tr>
+                                <td>{{ monitor.product.name[:50] if monitor.product else 'N/A' }}...</td>
+                                <td><code>{{ monitor.search_query[:40] }}...</code></td>
+                                <td>
+                                    {% if monitor.source == 'google_shopping' %}
+                                    <span class="badge bg-primary">Google</span>
+                                    {% else %}
+                                    <span class="badge bg-warning">eBay</span>
+                                    {% endif %}
+                                </td>
+                                <td>{{ monitor.last_run_at.strftime('%d/%m %H:%M') if monitor.last_run_at else 'Mai' }}</td>
+                                <td>
+                                    {% if monitor.is_active %}
+                                    <span class="badge bg-success">Attivo</span>
+                                    {% else %}
+                                    <span class="badge bg-secondary">Disattivo</span>
+                                    {% endif %}
+                                </td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+{% endif %}
+{% endblock %}
