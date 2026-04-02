@@ -5,7 +5,7 @@ from datetime import datetime, date
 class GeminiService:
     """Servizio per validazione intelligente prodotti usando Gemini AI"""
     
-    API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent"
+    API_URL = "https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent"
     
     # Tracking utilizzo (in memoria, reset al restart)
     _requests_today = 0
@@ -119,7 +119,8 @@ NON_VALIDO:motivo breve - se non corrisponde"""
             )
             
             if response.status_code != 200:
-                print(f"[Gemini] API error: {response.status_code} - {response.text[:200]}")
+                error_detail = response.text[:500] if response.text else "No response body"
+                print(f"[Gemini] API error {response.status_code}: {error_detail}")
                 GeminiService._errors_count += 1
                 return True, f"Errore API: {response.status_code}"
             
