@@ -62,19 +62,56 @@ async function collectAll() {
     const resultDiv = document.getElementById('action-result');
     
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Raccolta in corso...';
+    resultDiv.style.display = 'block';
+    resultDiv.className = 'alert alert-info';
+    
+    let totalProcessed = 0;
+    let totalSuccess = 0;
+    let totalFailed = 0;
+    let offset = 0;
+    const batchSize = 5;  // 5 monitor alla volta per evitare timeout
     
     try {
-        const res = await fetch('/api/collect-all', { method: 'POST' });
-        const data = await res.json();
+        while (true) {
+            btn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> Raccolta batch ${Math.floor(offset/batchSize) + 1}...`;
+            resultDiv.innerHTML = `<i class="bi bi-hourglass-split"></i> Processati: ${totalProcessed} | In corso...`;
+            
+            const res = await fetch('/api/collect-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ batch_size: batchSize, offset: offset })
+            });
+            
+            if (!res.ok) {
+                throw new Error(`HTTP ${res.status}`);
+            }
+            
+            const data = await res.json();
+            
+            totalProcessed += data.processed;
+            totalSuccess += data.successful;
+            totalFailed += data.failed;
+            
+            // Aggiorna progress
+            resultDiv.innerHTML = `<i class="bi bi-hourglass-split"></i> Processati: ${totalProcessed}/${data.total} | Successo: ${totalSuccess} | Falliti: ${totalFailed}`;
+            
+            // Se non ci sono più monitor da processare, esci
+            if (data.remaining === 0 || data.processed === 0) {
+                break;
+            }
+            
+            offset = data.next_offset;
+            
+            // Piccola pausa tra batch per non sovraccaricare
+            await new Promise(r => setTimeout(r, 500));
+        }
         
-        resultDiv.style.display = 'block';
         resultDiv.className = 'alert alert-success';
-        resultDiv.innerHTML = `<i class="bi bi-check-circle"></i> Processati: ${data.processed}, Successo: ${data.successful}, Falliti: ${data.failed}`;
+        resultDiv.innerHTML = `<i class="bi bi-check-circle"></i> Completato! Processati: ${totalProcessed}, Successo: ${totalSuccess}, Falliti: ${totalFailed}`;
+        
     } catch (e) {
-        resultDiv.style.display = 'block';
         resultDiv.className = 'alert alert-danger';
-        resultDiv.innerHTML = `<i class="bi bi-x-circle"></i> Errore: ${e.message}`;
+        resultDiv.innerHTML = `<i class="bi bi-x-circle"></i> Errore: ${e.message} (Processati fin qui: ${totalProcessed})`;
     }
     
     btn.disabled = false;

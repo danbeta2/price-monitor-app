@@ -391,23 +391,67 @@ def test_search():
 
 @api_bp.route('/collect-all', methods=['POST'])
 def collect_all():
-    monitors = Monitor.query.filter_by(is_active=True).all()
+    """Raccoglie prezzi per un batch di monitor (max 5 per richiesta per evitare timeout)"""
+    data = request.json or {}
+    batch_size = min(data.get('batch_size', 5), 10)  # Max 10 per sicurezza
+    offset = data.get('offset', 0)
+    
+    # Monitor attivi ordinati per ultima raccolta (prima quelli mai raccolti o più vecchi)
+    monitors = Monitor.query.filter_by(is_active=True).order_by(
+        Monitor.last_run_at.asc().nullsfirst()
+    ).offset(offset).limit(batch_size).all()
+    
+    total_active = Monitor.query.filter_by(is_active=True).count()
+    
+    if not monitors:
+        return jsonify({
+            'processed': 0,
+            'successful': 0,
+            'failed': 0,
+            'remaining': 0,
+            'total': total_active,
+            'message': 'Tutti i monitor sono stati processati'
+        })
+    
     collector = PriceCollector()
     
     results = {
         'processed': 0,
         'successful': 0,
         'failed': 0,
+        'errors': [],
     }
     
     for monitor in monitors:
-        result = collector.collect_for_monitor(monitor)
-        results['processed'] += 1
-        
-        if 'error' in result:
+        try:
+            print(f"[Collect] Processing monitor {monitor.id}: {monitor.search_query[:50]}...")
+            result = collector.collect_for_monitor(monitor)
+            results['processed'] += 1
+            
+            # Aggiorna timestamp ultima raccolta
+            monitor.last_run_at = datetime.utcnow()
+            db.session.commit()
+            
+            if 'error' in result:
+                results['failed'] += 1
+                results['errors'].append(f"Monitor {monitor.id}: {result['error']}")
+            else:
+                results['successful'] += 1
+                print(f"[Collect] Monitor {monitor.id}: {result.get('new_records', 0)} nuovi record")
+        except Exception as e:
             results['failed'] += 1
-        else:
-            results['successful'] += 1
+            results['errors'].append(f"Monitor {monitor.id}: {str(e)}")
+            print(f"[Collect] Error on monitor {monitor.id}: {e}")
+    
+    remaining = total_active - offset - len(monitors)
+    results['remaining'] = max(0, remaining)
+    results['total'] = total_active
+    results['next_offset'] = offset + len(monitors)
+    
+    if remaining > 0:
+        results['message'] = f'Processati {results["processed"]}, rimangono {remaining} monitor'
+    else:
+        results['message'] = f'Completato! Processati {results["processed"]} monitor'
     
     return jsonify(results)
 
