@@ -2,11 +2,16 @@
 
 document.addEventListener('DOMContentLoaded', function() {
     // Dashboard actions
+    const btnFullSync = document.getElementById('btn-full-sync');
     const btnSync = document.getElementById('btn-sync-products');
     const btnCollect = document.getElementById('btn-collect-all');
     const btnTestSearch = document.getElementById('btn-test-search');
     const btnMonitorAll = document.getElementById('btn-monitor-all');
     const btnCleanupSingles = document.getElementById('btn-cleanup-singles');
+    
+    if (btnFullSync) {
+        btnFullSync.addEventListener('click', fullSync);
+    }
     
     if (btnSync) {
         btnSync.addEventListener('click', syncProducts);
@@ -28,6 +33,114 @@ document.addEventListener('DOMContentLoaded', function() {
         btnCleanupSingles.addEventListener('click', cleanupSingleCards);
     }
 });
+
+// ============ FULL SYNC - Fa tutto in un click ============
+async function fullSync() {
+    const btn = document.getElementById('btn-full-sync');
+    const progressDiv = document.getElementById('sync-progress');
+    const progressBar = document.getElementById('sync-progress-bar');
+    const statusText = document.getElementById('sync-status');
+    const resultDiv = document.getElementById('action-result');
+    
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> In corso...';
+    progressDiv.style.display = 'block';
+    resultDiv.style.display = 'none';
+    
+    let summary = { synced: 0, monitors: 0, prices: 0, errors: [] };
+    
+    try {
+        // STEP 1: Sincronizza WooCommerce (33%)
+        updateProgress(10, '1/3 Sincronizzazione WooCommerce...');
+        const syncRes = await fetch('/api/sync-products', { method: 'POST' });
+        const syncData = await syncRes.json();
+        
+        if (syncData.error) {
+            throw new Error(`Sync: ${syncData.error}`);
+        }
+        summary.synced = syncData.synced || 0;
+        updateProgress(33, `✓ ${summary.synced} prodotti sincronizzati`);
+        await sleep(500);
+        
+        // STEP 2: Crea Monitor (66%)
+        updateProgress(40, '2/3 Creazione monitor...');
+        const monitorRes = await fetch('/api/monitors/create-all', { method: 'POST' });
+        const monitorData = await monitorRes.json();
+        
+        if (monitorData.error) {
+            throw new Error(`Monitor: ${monitorData.error}`);
+        }
+        summary.monitors = monitorData.created || 0;
+        updateProgress(66, `✓ ${summary.monitors} monitor creati`);
+        await sleep(500);
+        
+        // STEP 3: Raccogli prezzi (100%)
+        updateProgress(70, '3/3 Raccolta prezzi in corso...');
+        
+        // Raccolta batch per evitare timeout
+        let offset = 0;
+        let totalProcessed = 0;
+        let remaining = 999;
+        
+        while (remaining > 0) {
+            const collectRes = await fetch('/api/collect-all', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ batch_size: 5, offset: offset })
+            });
+            const collectData = await collectRes.json();
+            
+            if (collectData.error) {
+                summary.errors.push(collectData.error);
+                break;
+            }
+            
+            totalProcessed += collectData.processed || 0;
+            summary.prices += collectData.successful || 0;
+            remaining = collectData.remaining || 0;
+            offset = collectData.next_offset || offset + 5;
+            
+            // Update progress (70% -> 100%)
+            const progress = 70 + Math.min(30, (totalProcessed / (totalProcessed + remaining)) * 30);
+            updateProgress(progress, `3/3 Raccolti ${summary.prices} prezzi (${remaining} rimanenti)...`);
+            
+            // Piccola pausa tra batch
+            if (remaining > 0) await sleep(200);
+        }
+        
+        updateProgress(100, 'Completato!');
+        
+        // Mostra risultato finale
+        resultDiv.style.display = 'block';
+        resultDiv.className = 'alert alert-success';
+        resultDiv.innerHTML = `
+            <i class="bi bi-check-circle-fill"></i> <strong>Monitoraggio Completato!</strong><br>
+            📦 ${summary.synced} prodotti sincronizzati<br>
+            📊 ${summary.monitors} monitor creati<br>
+            💰 ${summary.prices} prezzi raccolti
+            ${summary.errors.length > 0 ? '<br><small class="text-warning">⚠️ ' + summary.errors.join(', ') + '</small>' : ''}
+            <br><br>
+            <a href="/monitors" class="btn btn-primary btn-sm">Vedi Monitor →</a>
+        `;
+        
+    } catch (e) {
+        resultDiv.style.display = 'block';
+        resultDiv.className = 'alert alert-danger';
+        resultDiv.innerHTML = `<i class="bi bi-x-circle"></i> Errore: ${e.message}`;
+    }
+    
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-rocket-takeoff"></i> Avvia Monitoraggio Completo';
+    
+    function updateProgress(percent, text) {
+        progressBar.style.width = percent + '%';
+        statusText.textContent = text;
+    }
+    
+    function sleep(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    }
+}
 
 async function syncProducts() {
     const btn = document.getElementById('btn-sync-products');

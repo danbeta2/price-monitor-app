@@ -94,31 +94,53 @@
     <div class="col-lg-4">
         <div class="card h-100">
             <div class="card-header">
-                <i class="bi bi-lightning"></i> Azioni Rapide
+                <i class="bi bi-lightning"></i> Azioni
             </div>
             <div class="card-body">
-                <div class="quick-actions">
-                    <button class="quick-action-btn" id="btn-sync-products">
-                        <i class="bi bi-arrow-repeat"></i>
-                        <span>Sincronizza WC</span>
-                    </button>
-                    <button class="quick-action-btn" id="btn-monitor-all" style="background: linear-gradient(135deg, #10b981, #059669); color: white;">
-                        <i class="bi bi-plus-lg"></i>
-                        <span>Monitor Sealed</span>
-                    </button>
-                    <button class="quick-action-btn" id="btn-collect-all">
-                        <i class="bi bi-collection"></i>
-                        <span>Raccogli Prezzi</span>
-                    </button>
-                    <a href="/monitors" class="quick-action-btn">
-                        <i class="bi bi-list-ul"></i>
-                        <span>Vedi Monitor</span>
+                <!-- Pulsante principale: fa tutto -->
+                <button class="btn btn-lg w-100 mb-3" id="btn-full-sync" style="background: linear-gradient(135deg, #8b5cf6, #6366f1); color: white; font-weight: 600;">
+                    <i class="bi bi-rocket-takeoff"></i> Avvia Monitoraggio Completo
+                </button>
+                <p class="text-muted small text-center mb-3">Sincronizza WC → Crea Monitor → Raccoglie Prezzi</p>
+                
+                <div id="sync-progress" style="display: none;">
+                    <div class="progress mb-2" style="height: 8px;">
+                        <div class="progress-bar progress-bar-striped progress-bar-animated" id="sync-progress-bar" style="width: 0%"></div>
+                    </div>
+                    <p class="text-center small mb-0" id="sync-status">Preparazione...</p>
+                </div>
+                
+                <div id="action-result" class="mt-3" style="display: none;"></div>
+                
+                <hr class="my-3">
+                
+                <!-- Azioni secondarie -->
+                <div class="d-flex gap-2 flex-wrap">
+                    <a href="/monitors" class="btn btn-outline-primary flex-fill">
+                        <i class="bi bi-list-ul"></i> Monitor
+                    </a>
+                    <a href="/products" class="btn btn-outline-secondary flex-fill">
+                        <i class="bi bi-box"></i> Prodotti
                     </a>
                 </div>
-                <button class="btn btn-sm btn-outline-warning mt-3 w-100" id="btn-cleanup-singles" title="Elimina monitor carte singole per risparmiare API">
-                    <i class="bi bi-trash"></i> Pulisci Carte Singole
-                </button>
-                <div id="action-result" class="mt-3" style="display: none;"></div>
+                
+                <details class="mt-3">
+                    <summary class="text-muted small" style="cursor: pointer;">Azioni avanzate</summary>
+                    <div class="mt-2 d-flex flex-column gap-2">
+                        <button class="btn btn-sm btn-outline-secondary" id="btn-sync-products">
+                            <i class="bi bi-arrow-repeat"></i> Solo Sincronizza WC
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" id="btn-monitor-all">
+                            <i class="bi bi-plus-lg"></i> Solo Crea Monitor
+                        </button>
+                        <button class="btn btn-sm btn-outline-secondary" id="btn-collect-all">
+                            <i class="bi bi-collection"></i> Solo Raccogli Prezzi
+                        </button>
+                        <button class="btn btn-sm btn-outline-warning" id="btn-cleanup-singles">
+                            <i class="bi bi-trash"></i> Pulisci Carte Singole
+                        </button>
+                    </div>
+                </details>
             </div>
         </div>
     </div>
