@@ -64,9 +64,11 @@ def api_status():
     """Ritorna lo stato delle API e crediti rimanenti"""
     from app.services.serpapi import SerpAPIService
     from app.services.ebay import EbayService
+    from app.services.gemini import GeminiService
     
     serpapi = SerpAPIService()
     ebay = EbayService()
+    gemini = GeminiService()
     
     result = {
         'serpapi': {
@@ -77,6 +79,11 @@ def api_status():
         'ebay': {
             'configured': ebay.is_configured(),
             'last_error': ebay.get_last_error(),
+        },
+        'gemini': {
+            'configured': gemini.is_configured(),
+            'usage': None,
+            'warning': None,
         }
     }
     
@@ -86,7 +93,29 @@ def api_status():
         if warning:
             result['serpapi']['warning'] = warning
     
+    if gemini.is_configured():
+        result['gemini']['usage'] = gemini.get_usage_stats()
+        warning = gemini.get_usage_warning()
+        if warning:
+            result['gemini']['warning'] = warning
+    
+    # Stato AI validation
+    result['ai_validation_enabled'] = PriceCollector.is_ai_validation_enabled()
+    
     return jsonify(result)
+
+@api_bp.route('/settings/ai-validation', methods=['POST'])
+def toggle_ai_validation():
+    """Abilita/disabilita validazione AI"""
+    data = request.get_json(silent=True) or {}
+    enabled = data.get('enabled', True)
+    
+    PriceCollector.set_ai_validation(enabled)
+    
+    return jsonify({
+        'enabled': PriceCollector.is_ai_validation_enabled(),
+        'message': f"Validazione AI {'abilitata' if enabled else 'disabilitata'}"
+    })
 
 @api_bp.route('/sync-products', methods=['POST'])
 def sync_products():

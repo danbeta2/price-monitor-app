@@ -65,10 +65,23 @@ class PriceCollector:
         '36', '24', '18', '12', '10', '6', '3',
     }
     
+    # Toggle globale per validazione AI (può essere disabilitato se finiscono crediti)
+    _use_ai_validation = True
+    
     def __init__(self):
         self.serpapi = SerpAPIService()
         self.ebay = EbayService()
         self.gemini = GeminiService()
+    
+    @classmethod
+    def set_ai_validation(cls, enabled):
+        """Abilita/disabilita validazione AI"""
+        cls._use_ai_validation = enabled
+        print(f"[PriceCollector] AI validation: {'ENABLED' if enabled else 'DISABLED'}")
+    
+    @classmethod
+    def is_ai_validation_enabled(cls):
+        return cls._use_ai_validation
     
     def collect_for_monitor(self, monitor):
         """Raccoglie prezzi da tutte le fonti configurate per un monitor"""
@@ -138,11 +151,13 @@ class PriceCollector:
             item['_basic_valid'] = basic_valid
             pre_filtered.append(item)
         
-        # STEP 2: Validazione AI con Gemini (solo sui prodotti che passano il filtro base)
+        # STEP 2: Validazione AI con Gemini (solo se abilitato e configurato)
         items_for_ai = [item for item in pre_filtered if item['_basic_valid']]
         
         ai_results = {}
-        if items_for_ai and self.gemini.is_configured():
+        use_ai = PriceCollector._use_ai_validation and self.gemini.is_configured() and self.gemini.can_make_request()
+        
+        if items_for_ai and use_ai:
             print(f"[Gemini] Validating {len(items_for_ai)} items for: {monitor.search_query[:50]}...")
             ai_results = self.gemini.batch_validate(
                 monitor.search_query, 
@@ -150,6 +165,8 @@ class PriceCollector:
                 your_price,
                 max_items=20  # Limita per evitare prompt troppo lunghi
             )
+        elif items_for_ai and not use_ai:
+            print(f"[PriceCollector] AI validation skipped (disabled or no credits)")
         
         # STEP 3: Salva risultati
         ai_index = 0

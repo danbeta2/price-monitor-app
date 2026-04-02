@@ -18,6 +18,22 @@
     <div class="search-results-count" id="search-results-info"></div>
 </div>
 
+<!-- API Status Bar -->
+<div class="card mb-3" id="api-status-bar">
+    <div class="card-body py-2">
+        <div class="d-flex justify-content-between align-items-center flex-wrap gap-2">
+            <div class="d-flex gap-3 align-items-center">
+                <span class="badge bg-secondary" id="serpapi-status">SerpAPI: --</span>
+                <span class="badge bg-secondary" id="gemini-status">Gemini AI: --</span>
+            </div>
+            <div class="form-check form-switch mb-0">
+                <input class="form-check-input" type="checkbox" id="ai-validation-toggle" checked>
+                <label class="form-check-label small" for="ai-validation-toggle">Validazione AI</label>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- API Credits Warning -->
 <div id="api-warning" class="alert alert-warning mb-3" style="display: none;">
     <i class="bi bi-exclamation-triangle"></i> <span id="api-warning-text"></span>
@@ -244,6 +260,11 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Bulk edit button
     document.getElementById('btn-bulk-edit').addEventListener('click', openBulkEdit);
+    
+    // AI validation toggle
+    document.getElementById('ai-validation-toggle').addEventListener('change', function() {
+        toggleAiValidation(this.checked);
+    });
     
     // Select all
     document.getElementById('select-all').addEventListener('change', function() {
@@ -771,21 +792,78 @@ async function checkApiStatus() {
         const res = await fetch('/api/api-status');
         const data = await res.json();
         
+        // Update SerpAPI status badge
+        const serpapiStatus = document.getElementById('serpapi-status');
+        if (data.serpapi?.configured) {
+            const remaining = data.serpapi.remaining_searches;
+            if (remaining !== null) {
+                serpapiStatus.textContent = `SerpAPI: ${remaining}`;
+                serpapiStatus.className = remaining > 50 ? 'badge bg-success' : (remaining > 10 ? 'badge bg-warning' : 'badge bg-danger');
+            } else {
+                serpapiStatus.textContent = 'SerpAPI: ✓';
+                serpapiStatus.className = 'badge bg-success';
+            }
+        } else {
+            serpapiStatus.textContent = 'SerpAPI: ✗';
+            serpapiStatus.className = 'badge bg-secondary';
+        }
+        
+        // Update Gemini status badge
+        const geminiStatus = document.getElementById('gemini-status');
+        if (data.gemini?.configured) {
+            const usage = data.gemini.usage;
+            if (usage) {
+                geminiStatus.textContent = `Gemini: ${usage.remaining_today}/${usage.daily_limit}`;
+                geminiStatus.className = usage.remaining_today > 200 ? 'badge bg-success' : (usage.remaining_today > 50 ? 'badge bg-warning' : 'badge bg-danger');
+            } else {
+                geminiStatus.textContent = 'Gemini: ✓';
+                geminiStatus.className = 'badge bg-success';
+            }
+        } else {
+            geminiStatus.textContent = 'Gemini: ✗';
+            geminiStatus.className = 'badge bg-secondary';
+        }
+        
+        // Update AI toggle state
+        const aiToggle = document.getElementById('ai-validation-toggle');
+        aiToggle.checked = data.ai_validation_enabled !== false;
+        
+        // Show warnings if any
         const warningDiv = document.getElementById('api-warning');
         const warningText = document.getElementById('api-warning-text');
         
+        let warnings = [];
         if (data.serpapi?.warning) {
+            warnings.push(`SerpAPI: ${data.serpapi.warning.message}`);
+        }
+        if (data.gemini?.warning) {
+            warnings.push(`Gemini: ${data.gemini.warning.message}`);
+        }
+        
+        if (warnings.length > 0) {
             warningDiv.style.display = 'block';
-            warningDiv.className = `alert alert-${data.serpapi.warning.level} mb-3`;
-            warningText.textContent = data.serpapi.warning.message;
-        } else if (data.serpapi?.remaining_searches !== null) {
-            // Show remaining credits in a subtle way
-            warningDiv.style.display = 'block';
-            warningDiv.className = 'alert alert-info mb-3';
-            warningText.textContent = `SerpAPI: ${data.serpapi.remaining_searches} ricerche rimanenti questo mese`;
+            warningDiv.className = 'alert alert-warning mb-3';
+            warningText.innerHTML = warnings.join('<br>');
+        } else {
+            warningDiv.style.display = 'none';
         }
     } catch (e) {
-        console.log('Could not check API status');
+        console.log('Could not check API status:', e);
+    }
+}
+
+// Toggle AI validation
+async function toggleAiValidation(enabled) {
+    try {
+        const res = await fetch('/api/settings/ai-validation', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ enabled })
+        });
+        const data = await res.json();
+        console.log('AI validation:', data.message);
+    } catch (e) {
+        console.error('Failed to toggle AI validation:', e);
     }
 }
 
