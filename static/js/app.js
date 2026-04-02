@@ -50,7 +50,14 @@ async function syncProducts() {
             resultDiv.innerHTML = `<i class="bi bi-exclamation-triangle"></i> ${data.message || 'Nessun prodotto trovato'}`;
         } else {
             resultDiv.className = 'alert alert-success';
-            resultDiv.innerHTML = `<i class="bi bi-check-circle"></i> Sincronizzati ${data.synced} prodotti (${data.in_stock || 0} disponibili, ${data.out_of_stock || 0} esauriti)`;
+            let msg = `<i class="bi bi-check-circle"></i> Sincronizzati ${data.synced} prodotti sealed`;
+            if (data.skipped_single_cards > 0) {
+                msg += ` <small class="text-muted">(ignorate ${data.skipped_single_cards} carte singole)</small>`;
+            }
+            if (data.removed > 0) {
+                msg += `<br><small>Rimossi ${data.removed} prodotti obsoleti</small>`;
+            }
+            resultDiv.innerHTML = msg;
         }
     } catch (e) {
         resultDiv.style.display = 'block';
@@ -279,13 +286,15 @@ async function createMonitorsForAll() {
 
 async function cleanupSingleCards() {
     const confirmed = confirm(
-        'Eliminare TUTTI i monitor di carte singole?\n\n' +
-        'Questo rimuoverà i monitor con pattern tipo:\n' +
-        '• 001/191 Exeggcute...\n' +
-        '• 204/182 Kangaskhan...\n\n' +
+        'ELIMINARE DEFINITIVAMENTE tutte le carte singole?\n\n' +
+        'Verranno eliminati:\n' +
+        '• PRODOTTI (dal database locale)\n' +
+        '• MONITOR associati\n' +
+        '• PREZZI raccolti\n\n' +
+        'Pattern eliminati: 001/191, 204/182, etc.\n\n' +
         '✅ Risparmierai crediti API\n' +
         '✅ I prodotti sealed rimarranno\n\n' +
-        'Continuare?'
+        'Questa operazione è irreversibile. Continuare?'
     );
     
     if (!confirmed) return;
@@ -294,7 +303,7 @@ async function cleanupSingleCards() {
     const resultDiv = document.getElementById('action-result');
     
     btn.disabled = true;
-    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Eliminazione...';
     
     try {
         const res = await fetch('/api/monitors/cleanup-single-cards', { method: 'POST' });
@@ -302,7 +311,11 @@ async function cleanupSingleCards() {
         
         resultDiv.style.display = 'block';
         resultDiv.className = 'alert alert-success';
-        resultDiv.innerHTML = `<i class="bi bi-check-circle"></i> ${data.message}`;
+        let msg = `<i class="bi bi-check-circle"></i> <strong>Pulizia completata</strong><br>`;
+        msg += `🗑️ ${data.deleted_products || 0} prodotti eliminati<br>`;
+        msg += `📊 ${data.deleted_monitors || 0} monitor eliminati<br>`;
+        msg += `💰 ${data.deleted_records || 0} record prezzi eliminati`;
+        resultDiv.innerHTML = msg;
     } catch (e) {
         resultDiv.style.display = 'block';
         resultDiv.className = 'alert alert-danger';

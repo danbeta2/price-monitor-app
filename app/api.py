@@ -5,8 +5,17 @@ from app.services.woocommerce import WooCommerceService
 from app.services.price_collector import PriceCollector
 from sqlalchemy import func
 from datetime import datetime, timedelta
+import re
 
 api_bp = Blueprint('api', __name__)
+
+def is_single_card(name):
+    """Verifica se un prodotto è una carta singola (pattern: 001/191, 204/182, etc.)"""
+    if not name:
+        return False
+    # Pattern: numero/numero all'inizio del nome (es. "001/191 Exeggcute...")
+    single_card_pattern = r'^\d{1,3}/\d{1,3}\s'
+    return bool(re.match(single_card_pattern, name))
 
 @api_bp.route('/products')
 def get_products():
@@ -17,7 +26,10 @@ def get_products():
     in_stock_only = request.args.get('in_stock_only', 'false').lower() == 'true'
     
     wc = WooCommerceService()
-    products = wc.get_products(page=page, per_page=per_page, category=category, search=search, in_stock_only=in_stock_only)
+    all_products = wc.get_products(page=page, per_page=per_page, category=category, search=search, in_stock_only=in_stock_only)
+    
+    # Filtra carte singole - NON devono comparire mai
+    products = [p for p in all_products if not is_single_card(p.get('name', ''))]
     
     return jsonify({
         'products': products,
@@ -88,9 +100,9 @@ def sync_products():
         }), 400
     
     synced = 0
-    skipped_out_of_stock = 0
+    skipped_single_cards = 0
     
-    print("[Sync] Starting sync (SOLO prodotti disponibili)...")
+    print("[Sync] Starting sync (SOLO prodotti SEALED disponibili, no carte singole)...")
     
     try:
         page = 1
@@ -98,7 +110,6 @@ def sync_products():
         
         while page <= max_pages:
             print(f"[Sync] Fetching page {page} (in_stock_only=True)...")
-            # SOLO prodotti disponibili!
             batch = wc.get_products(page=page, per_page=50, in_stock_only=True)
             
             if batch is None and page == 1:
@@ -113,6 +124,13 @@ def sync_products():
             
             # Processa questo batch e commit subito
             for wc_product in batch:
+                product_name = wc_product.get('name', '')
+                
+                # ESCLUDI carte singole fin dalla sincronizzazione
+                if is_single_card(product_name):
+                    skipped_single_cards += 1
+                    continue
+                
                 product = Product.query.filter_by(wc_product_id=wc_product['id']).first()
                 
                 if not product:
@@ -140,28 +158,29 @@ def sync_products():
             
             page += 1
         
-        print(f"[Sync] Completed: {synced} prodotti disponibili sincronizzati")
+        print(f"[Sync] Completed: {synced} prodotti sealed sincronizzati, {skipped_single_cards} carte singole ignorate")
         
-        # Rimuovi prodotti esauriti dal database (senza monitor attivi)
+        # Rimuovi prodotti esauriti o carte singole dal database (senza monitor attivi)
         removed = 0
-        out_of_stock_products = Product.query.filter(Product.stock_status != 'instock').all()
-        for p in out_of_stock_products:
-            # Controlla se ha monitor attivi
-            active_monitors = Monitor.query.filter_by(product_id=p.id, is_active=True).count()
-            if active_monitors == 0:
-                db.session.delete(p)
-                removed += 1
+        all_products = Product.query.all()
+        for p in all_products:
+            # Rimuovi se: esaurito OPPURE carta singola (senza monitor attivi)
+            should_remove = p.stock_status != 'instock' or is_single_card(p.name)
+            if should_remove:
+                active_monitors = Monitor.query.filter_by(product_id=p.id, is_active=True).count()
+                if active_monitors == 0:
+                    db.session.delete(p)
+                    removed += 1
         
         if removed > 0:
             db.session.commit()
-            print(f"[Sync] Removed {removed} out-of-stock products without monitors")
+            print(f"[Sync] Removed {removed} products (out-of-stock or single cards)")
         
         return jsonify({
             'synced': synced,
-            'in_stock': synced,
-            'out_of_stock': 0,
+            'skipped_single_cards': skipped_single_cards,
             'removed': removed,
-            'message': f'Sincronizzati {synced} prodotti disponibili' + (f', rimossi {removed} esauriti' if removed > 0 else '')
+            'message': f'Sincronizzati {synced} prodotti sealed' + (f', ignorate {skipped_single_cards} carte singole' if skipped_single_cards > 0 else '') + (f', rimossi {removed}' if removed > 0 else '')
         })
         
     except Exception as e:
@@ -586,32 +605,39 @@ def collect_all():
     return jsonify(results)
 
 
-import re
-
-def is_single_card(name):
-    """Verifica se un prodotto è una carta singola (pattern: 001/191, 204/182, etc.)"""
-    # Pattern: numero/numero all'inizio del nome (es. "001/191 Exeggcute...")
-    single_card_pattern = r'^\d{1,3}/\d{1,3}\s'
-    return bool(re.match(single_card_pattern, name))
-
 @api_bp.route('/monitors/cleanup-single-cards', methods=['POST'])
 def cleanup_single_cards():
-    """Elimina tutti i monitor di carte singole per risparmiare API"""
-    monitors = Monitor.query.all()
-    deleted = 0
+    """Elimina TUTTI i dati delle carte singole: monitor, price records E prodotti"""
     
-    for monitor in monitors:
-        if monitor.product and is_single_card(monitor.product.name):
-            # Elimina anche i price records associati
-            PriceRecord.query.filter_by(monitor_id=monitor.id).delete()
+    # 1. Trova tutti i prodotti che sono carte singole
+    products = Product.query.all()
+    single_card_products = [p for p in products if is_single_card(p.name)]
+    
+    deleted_monitors = 0
+    deleted_products = 0
+    deleted_records = 0
+    
+    for product in single_card_products:
+        # 2. Elimina tutti i monitor associati
+        monitors = Monitor.query.filter_by(product_id=product.id).all()
+        for monitor in monitors:
+            # 3. Elimina tutti i price records
+            records_count = PriceRecord.query.filter_by(monitor_id=monitor.id).delete()
+            deleted_records += records_count
             db.session.delete(monitor)
-            deleted += 1
+            deleted_monitors += 1
+        
+        # 4. Elimina il prodotto
+        db.session.delete(product)
+        deleted_products += 1
     
     db.session.commit()
     
     return jsonify({
-        'deleted': deleted,
-        'message': f'Eliminati {deleted} monitor di carte singole'
+        'deleted_monitors': deleted_monitors,
+        'deleted_products': deleted_products,
+        'deleted_records': deleted_records,
+        'message': f'Eliminati {deleted_products} carte singole, {deleted_monitors} monitor, {deleted_records} prezzi'
     })
 
 @api_bp.route('/monitors/create-all', methods=['POST'])
