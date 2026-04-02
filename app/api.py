@@ -46,6 +46,35 @@ def debug_config():
         'ebay_secret': bool(current_app.config.get('EBAY_CLIENT_SECRET')),
     })
 
+@api_bp.route('/api-status')
+def api_status():
+    """Ritorna lo stato delle API e crediti rimanenti"""
+    from app.services.serpapi import SerpAPIService
+    from app.services.ebay import EbayService
+    
+    serpapi = SerpAPIService()
+    ebay = EbayService()
+    
+    result = {
+        'serpapi': {
+            'configured': serpapi.is_configured(),
+            'remaining_searches': None,
+            'warning': None,
+        },
+        'ebay': {
+            'configured': ebay.is_configured(),
+            'last_error': ebay.get_last_error(),
+        }
+    }
+    
+    if serpapi.is_configured():
+        result['serpapi']['remaining_searches'] = serpapi.get_remaining_searches()
+        warning = serpapi.get_usage_warning()
+        if warning:
+            result['serpapi']['warning'] = warning
+    
+    return jsonify(result)
+
 @api_bp.route('/sync-products', methods=['POST'])
 def sync_products():
     wc = WooCommerceService()
@@ -293,6 +322,56 @@ def delete_monitor(monitor_id):
     db.session.commit()
     return jsonify({'message': 'Monitor deleted'})
 
+@api_bp.route('/monitors/<int:monitor_id>', methods=['PUT', 'PATCH'])
+def update_monitor(monitor_id):
+    """Aggiorna un monitor (query, tolleranza, fonte, lingua)"""
+    monitor = Monitor.query.get_or_404(monitor_id)
+    data = request.json or {}
+    
+    if 'search_query' in data:
+        monitor.search_query = data['search_query'][:500]
+    if 'price_tolerance' in data:
+        monitor.price_tolerance = float(data['price_tolerance'])
+    if 'source' in data and data['source'] in ['both', 'google_shopping', 'ebay']:
+        monitor.source = data['source']
+    if 'language' in data:
+        monitor.language = data['language']
+    if 'is_active' in data:
+        monitor.is_active = bool(data['is_active'])
+    
+    db.session.commit()
+    return jsonify({'message': 'Monitor updated', 'monitor': monitor.to_dict()})
+
+@api_bp.route('/monitors/bulk-update', methods=['POST'])
+def bulk_update_monitors():
+    """Aggiorna più monitor in batch"""
+    data = request.json or {}
+    monitor_ids = data.get('monitor_ids', [])
+    updates = data.get('updates', {})
+    
+    if not monitor_ids:
+        return jsonify({'error': 'No monitor IDs provided'}), 400
+    
+    updated = 0
+    for monitor_id in monitor_ids:
+        monitor = Monitor.query.get(monitor_id)
+        if not monitor:
+            continue
+        
+        if 'price_tolerance' in updates:
+            monitor.price_tolerance = float(updates['price_tolerance'])
+        if 'source' in updates and updates['source'] in ['both', 'google_shopping', 'ebay']:
+            monitor.source = updates['source']
+        if 'language' in updates:
+            monitor.language = updates['language']
+        if 'is_active' in updates:
+            monitor.is_active = bool(updates['is_active'])
+        
+        updated += 1
+    
+    db.session.commit()
+    return jsonify({'updated': updated, 'message': f'{updated} monitor aggiornati'})
+
 @api_bp.route('/monitors/<int:monitor_id>/collect', methods=['POST'])
 def collect_prices(monitor_id):
     monitor = Monitor.query.get_or_404(monitor_id)
@@ -507,9 +586,37 @@ def collect_all():
     return jsonify(results)
 
 
+import re
+
+def is_single_card(name):
+    """Verifica se un prodotto è una carta singola (pattern: 001/191, 204/182, etc.)"""
+    # Pattern: numero/numero all'inizio del nome (es. "001/191 Exeggcute...")
+    single_card_pattern = r'^\d{1,3}/\d{1,3}\s'
+    return bool(re.match(single_card_pattern, name))
+
+@api_bp.route('/monitors/cleanup-single-cards', methods=['POST'])
+def cleanup_single_cards():
+    """Elimina tutti i monitor di carte singole per risparmiare API"""
+    monitors = Monitor.query.all()
+    deleted = 0
+    
+    for monitor in monitors:
+        if monitor.product and is_single_card(monitor.product.name):
+            # Elimina anche i price records associati
+            PriceRecord.query.filter_by(monitor_id=monitor.id).delete()
+            db.session.delete(monitor)
+            deleted += 1
+    
+    db.session.commit()
+    
+    return jsonify({
+        'deleted': deleted,
+        'message': f'Eliminati {deleted} monitor di carte singole'
+    })
+
 @api_bp.route('/monitors/create-all', methods=['POST'])
 def create_monitors_for_all():
-    """Crea UN monitor per ogni prodotto disponibile (cerca su Google + eBay insieme)"""
+    """Crea UN monitor per ogni prodotto SEALED disponibile (esclude carte singole)"""
     data = request.json or {}
     price_tolerance = data.get('price_tolerance', 50)
     language = data.get('language', 'it')
@@ -526,8 +633,14 @@ def create_monitors_for_all():
     
     created = 0
     skipped = 0
+    skipped_single_cards = 0
     
     for product in products:
+        # ESCLUDI carte singole per risparmiare API
+        if is_single_card(product.name):
+            skipped_single_cards += 1
+            continue
+        
         # Controlla se esiste già un monitor per questo prodotto
         existing = Monitor.query.filter_by(product_id=product.id).first()
         if existing:
@@ -551,6 +664,7 @@ def create_monitors_for_all():
     return jsonify({
         'created': created,
         'skipped': skipped,
+        'skipped_single_cards': skipped_single_cards,
         'total_products': len(products),
-        'message': f'Creati {created} monitor (ogni monitor cerca su Google + eBay)'
+        'message': f'Creati {created} monitor sealed (escluse {skipped_single_cards} carte singole)'
     })

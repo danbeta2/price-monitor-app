@@ -6,6 +6,7 @@ document.addEventListener('DOMContentLoaded', function() {
     const btnCollect = document.getElementById('btn-collect-all');
     const btnTestSearch = document.getElementById('btn-test-search');
     const btnMonitorAll = document.getElementById('btn-monitor-all');
+    const btnCleanupSingles = document.getElementById('btn-cleanup-singles');
     
     if (btnSync) {
         btnSync.addEventListener('click', syncProducts);
@@ -21,6 +22,10 @@ document.addEventListener('DOMContentLoaded', function() {
     
     if (btnMonitorAll) {
         btnMonitorAll.addEventListener('click', createMonitorsForAll);
+    }
+    
+    if (btnCleanupSingles) {
+        btnCleanupSingles.addEventListener('click', cleanupSingleCards);
     }
 });
 
@@ -222,13 +227,12 @@ async function createMonitorsForAll() {
     const btn = document.getElementById('btn-monitor-all');
     const resultDiv = document.getElementById('action-result');
     
-    // Conferma con l'utente
     const confirmed = confirm(
-        'Vuoi creare monitor per TUTTI i prodotti disponibili?\n\n' +
-        '✅ Ogni monitor cercherà su Google + eBay insieme\n' +
-        '✅ Filtro automatico lingua italiana/inglese\n' +
-        '✅ Statistiche unificate per prodotto\n\n' +
-        '⚠️ Limiti API per ogni raccolta prezzi:\n' +
+        'Vuoi creare monitor per i prodotti SEALED?\n\n' +
+        '✅ Esclude automaticamente carte singole (001/191, etc.)\n' +
+        '✅ Ogni monitor cerca su Google + eBay insieme\n' +
+        '✅ Risparmio crediti API\n\n' +
+        '⚠️ Limiti API:\n' +
         '   • SerpAPI (Google): 100/mese (free)\n' +
         '   • eBay: 5000/giorno (free)\n\n' +
         'Continuare?'
@@ -255,16 +259,13 @@ async function createMonitorsForAll() {
             resultDiv.innerHTML = `<i class="bi bi-exclamation-triangle"></i> ${data.error}<br><small>${data.message || ''}</small>`;
         } else {
             resultDiv.className = 'alert alert-success';
-            resultDiv.innerHTML = `
-                <i class="bi bi-check-circle"></i> <strong>${data.created} monitor creati!</strong><br>
-                <small>
-                    Ogni monitor cerca su Google + eBay<br>
-                    ${data.skipped} già esistenti su ${data.total_products} prodotti
-                </small>
-                <div class="mt-2">
-                    <a href="/monitors" class="btn btn-sm btn-success">Vai ai Monitor</a>
-                </div>
-            `;
+            let msg = `<i class="bi bi-check-circle"></i> <strong>${data.created} monitor creati!</strong><br>`;
+            if (data.skipped_single_cards > 0) {
+                msg += `<small class="text-warning">Escluse ${data.skipped_single_cards} carte singole</small><br>`;
+            }
+            msg += `<small>${data.skipped} già esistenti</small>`;
+            msg += `<div class="mt-2"><a href="/monitors" class="btn btn-sm btn-success">Vai ai Monitor</a></div>`;
+            resultDiv.innerHTML = msg;
         }
     } catch (e) {
         resultDiv.style.display = 'block';
@@ -274,6 +275,42 @@ async function createMonitorsForAll() {
     
     btn.disabled = false;
     btn.innerHTML = originalHtml;
+}
+
+async function cleanupSingleCards() {
+    const confirmed = confirm(
+        'Eliminare TUTTI i monitor di carte singole?\n\n' +
+        'Questo rimuoverà i monitor con pattern tipo:\n' +
+        '• 001/191 Exeggcute...\n' +
+        '• 204/182 Kangaskhan...\n\n' +
+        '✅ Risparmierai crediti API\n' +
+        '✅ I prodotti sealed rimarranno\n\n' +
+        'Continuare?'
+    );
+    
+    if (!confirmed) return;
+    
+    const btn = document.getElementById('btn-cleanup-singles');
+    const resultDiv = document.getElementById('action-result');
+    
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    
+    try {
+        const res = await fetch('/api/monitors/cleanup-single-cards', { method: 'POST' });
+        const data = await res.json();
+        
+        resultDiv.style.display = 'block';
+        resultDiv.className = 'alert alert-success';
+        resultDiv.innerHTML = `<i class="bi bi-check-circle"></i> ${data.message}`;
+    } catch (e) {
+        resultDiv.style.display = 'block';
+        resultDiv.className = 'alert alert-danger';
+        resultDiv.innerHTML = `<i class="bi bi-x-circle"></i> Errore: ${e.message}`;
+    }
+    
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-trash"></i> Pulisci Carte Singole';
 }
 
 function escapeHtml(text) {
