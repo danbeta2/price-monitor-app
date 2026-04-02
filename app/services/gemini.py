@@ -83,24 +83,34 @@ class GeminiService:
         # Costruisci il prompt
         price_context = f"\nPrezzo atteso: circa €{your_price:.2f}" if your_price else ""
         
-        prompt = f"""Sei un esperto di prodotti TCG (Trading Card Game) come Pokémon, Magic, Yu-Gi-Oh, Lorcana.
+        prompt = f"""Sei un esperto di prodotti TCG sealed (Pokémon, Magic, Yu-Gi-Oh, Lorcana).
 
-Devi verificare se il PRODOTTO TROVATO corrisponde ESATTAMENTE al PRODOTTO CERCATO.
+COMPITO: Verifica se il PRODOTTO TROVATO è ESATTAMENTE lo stesso del PRODOTTO CERCATO.
 
-PRODOTTO CERCATO: {searched_product}{price_context}
-PRODOTTO TROVATO: {found_title} - €{found_price:.2f}
+CERCATO: {searched_product}{price_context}
+TROVATO: {found_title} - €{found_price:.2f}
 
-REGOLE IMPORTANTI:
-1. Il TIPO di prodotto deve corrispondere:
-   - "Display" o "Box" (36 buste) ≠ "Bundle" (6 buste) ≠ "ETB" ≠ "Tin" ≠ "Blister"
-   - Verifica il NUMERO di buste/carte se indicato
-2. L'ESPANSIONE/SET deve corrispondere (es. "Fiamme Spettrali" ≠ "Corona Astrale")
-3. La LINGUA deve corrispondere se specificata (IT ≠ EN ≠ JP)
-4. NON sono validi: carte singole, lotti, prodotti usati, accessori
+CRITERI DI VALIDITÀ (TUTTI devono essere soddisfatti):
 
-Rispondi SOLO con UNA di queste opzioni:
-VALIDO - se il prodotto corrisponde
-NON_VALIDO:motivo breve - se non corrisponde"""
+1. TIPO PRODOTTO IDENTICO:
+   - Display/Box (36 buste) ≠ Bundle (6 buste) ≠ ETB ≠ Tin ≠ Blister (3 buste) ≠ Collection
+   - Il NUMERO di buste DEVE corrispondere esattamente
+
+2. ESPANSIONE/SET IDENTICO:
+   - "Scarlatto e Violetto" ≠ "Fiamme Ossidiana" ≠ "Destini di Paldea"
+   - "151" si riferisce SOLO all'espansione 151, non altri set
+
+3. PERSONAGGIO/VARIANTE (se specificato):
+   - "Charizard" ≠ "Pikachu" ≠ "Mewtwo"
+   - Se il nome cerca "Charizard", il trovato DEVE contenere Charizard
+
+4. ESCLUSIONI AUTOMATICHE:
+   - Carte singole, buste singole, lotti, usati, accessori → NON_VALIDO
+
+Rispondi SOLO:
+VALIDO
+oppure
+NON_VALIDO:motivo"""
 
         try:
             response = requests.post(
@@ -174,23 +184,25 @@ NON_VALIDO:motivo breve - se non corrisponde"""
         
         price_context = f"\nPrezzo atteso: circa €{your_price:.2f}" if your_price else ""
         
-        prompt = f"""Sei un esperto di prodotti TCG (Pokémon, Magic, Yu-Gi-Oh, Lorcana).
+        prompt = f"""Sei un esperto di prodotti TCG sealed (Pokémon, Magic, Yu-Gi-Oh, Lorcana).
 
 PRODOTTO CERCATO: {searched_product}{price_context}
 
-PRODOTTI TROVATI:
+PRODOTTI DA VERIFICARE:
 {products_list}
 
-Per OGNI prodotto, verifica se corrisponde ESATTAMENTE al prodotto cercato.
-Considera: tipo prodotto (Display/Bundle/ETB/Tin), numero buste, espansione, lingua.
+CRITERI: Un prodotto è VALIDO solo se:
+- STESSO tipo (Display 36 ≠ Bundle 6 ≠ ETB ≠ Tin ≠ Blister)
+- STESSO numero buste
+- STESSA espansione
+- STESSO personaggio (se specificato)
 
-Rispondi con UNA RIGA per prodotto nel formato:
-NUMERO:VALIDO oppure NUMERO:NON_VALIDO
+NON_VALIDO se: carta singola, busta singola, lotto, usato, espansione diversa, tipo diverso.
 
-Esempio:
-1:VALIDO
-2:NON_VALIDO
-3:VALIDO"""
+Rispondi con UNA RIGA per prodotto:
+1:VALIDO oppure 1:NON_VALIDO
+2:VALIDO oppure 2:NON_VALIDO
+..."""
 
         try:
             response = requests.post(

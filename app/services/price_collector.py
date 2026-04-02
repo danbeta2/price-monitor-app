@@ -231,44 +231,136 @@ class PriceCollector:
         return results
     
     def _validate_result(self, item, your_price, tolerance, search_query, language='it'):
-        """Valida un risultato - filtri più permissivi"""
+        """Valida un risultato con logica intelligente per TCG sealed products"""
         title = item.get('title', '')
         title_lower = title.lower()
+        query_lower = search_query.lower()
+        price = item.get('price', 0)
         
-        # 1. Check negative keywords (solo quelli critici)
-        critical_negatives = [
-            'lot ', ' lot', 'lotto', 'lotti', 'bundle of', 
-            'empty', 'vuoto', 'vuota', 'no cards', 'senza carte',
-            'fake', 'replica', 'proxy', 'custom', 'unofficial',
-            'repack', 'repacked', 'resealed',
-            'psa ', 'bgs ', 'cgc ', 'graded', 'gradato',
-        ]
-        for keyword in critical_negatives:
-            if keyword.lower() in title_lower:
-                return False
-        
-        # 2. Check lingua straniera (solo se è esplicitamente un'altra lingua)
-        if language == 'it':
-            foreign_explicit = ['japanese', 'giapponese', 'korean', 'coreano', 'chinese', 'cinese']
-            for kw in foreign_explicit:
-                if kw in title_lower:
-                    return False
-        
-        # 3. Verifica keywords principali (più permissivo)
-        if not self._match_main_keywords(search_query, title_lower):
-            return False
-        
-        # 4. Check price range - DEVE essere nel range ragionevole
-        # Un Display Box non può costare la metà del normale - è probabilmente un'altra cosa
+        # ========== 1. FILTRO PREZZO STRETTO (±20%) ==========
+        # Un prodotto sealed ha un prezzo di mercato relativamente stabile
         if your_price and your_price > 0:
-            price = item.get('price', 0)
-            # Range stretto: minimo 70% del tuo prezzo, massimo 180%
-            min_price = your_price * 0.70  # Non meno del 70%
-            max_price = your_price * 1.80  # Non più del 180%
+            min_price = your_price * 0.80  # Non meno dell'80%
+            max_price = your_price * 1.20  # Non più del 120%
             if not (min_price <= price <= max_price):
                 return False
         
+        # ========== 2. KEYWORDS NEGATIVE (esclusione immediata) ==========
+        critical_negatives = [
+            # Lotti/multipli
+            'lot ', ' lot', 'lotto', 'lotti', 'bundle of', 'set of', 'x2', 'x3', 'x4', 'x5',
+            # Usato/aperto
+            'empty', 'vuoto', 'vuota', 'no cards', 'senza carte', 'opened', 'aperto',
+            # Falsi
+            'fake', 'replica', 'proxy', 'custom', 'unofficial', 'fan made',
+            # Repacked
+            'repack', 'repacked', 'resealed', 'riconfezionato',
+            # Gradate
+            'psa ', 'bgs ', 'cgc ', 'graded', 'gradato', 'gem mint',
+            # Accessori
+            'sleeves', 'bustine protettive', 'deck box', 'playmat', 'tappetino', 'binder',
+            # Carte singole
+            'singola', 'singolo', 'single card', 'holo rare', 'full art', 'secret rare',
+        ]
+        for keyword in critical_negatives:
+            if keyword in title_lower:
+                return False
+        
+        # ========== 3. MATCH TIPO PRODOTTO (critico!) ==========
+        # Se cerco "Display 36" non voglio "Bundle 6" o "Blister 3"
+        if not self._match_product_type_strict(query_lower, title_lower):
+            return False
+        
+        # ========== 4. MATCH ESPANSIONE/SET ==========
+        # Le parole chiave dell'espansione devono corrispondere
+        if not self._match_expansion(query_lower, title_lower):
+            return False
+        
+        # ========== 5. LINGUA ==========
+        if language == 'it':
+            foreign_keywords = ['japanese', 'giapponese', 'japan', 'korean', 'coreano', 
+                               'chinese', 'cinese', 'china', 'german', 'tedesco']
+            for kw in foreign_keywords:
+                if kw in title_lower and kw not in query_lower:
+                    return False
+        
         return True
+    
+    def _match_product_type_strict(self, query, title):
+        """Verifica STRETTAMENTE che il tipo di prodotto corrisponda"""
+        
+        # Definisci categorie di prodotti MUTUAMENTE ESCLUSIVE
+        product_categories = {
+            'display': ['display', 'box 36', '36 buste', '36 booster', 'booster box'],
+            'bundle': ['bundle', '6 buste', '6 booster'],
+            'etb': ['etb', 'elite trainer', 'trainer box'],
+            'tin': ['tin ', ' tin', 'latta'],
+            'blister': ['blister', '3 buste', '3 booster', 'checklane'],
+            'collection': ['collection box', 'collezione premium', 'premium collection'],
+            'gift': ['gift set', 'gift box', 'set regalo'],
+        }
+        
+        # Trova la categoria del prodotto cercato
+        query_category = None
+        for cat, keywords in product_categories.items():
+            for kw in keywords:
+                if kw in query:
+                    query_category = cat
+                    break
+            if query_category:
+                break
+        
+        if not query_category:
+            return True  # Non riusciamo a determinare, passa
+        
+        # Trova la categoria del prodotto trovato
+        title_category = None
+        for cat, keywords in product_categories.items():
+            for kw in keywords:
+                if kw in title:
+                    title_category = cat
+                    break
+            if title_category:
+                break
+        
+        # Se il titolo ha una categoria diversa -> INVALIDO
+        if title_category and title_category != query_category:
+            return False
+        
+        # Controlla anche i numeri di buste se presenti
+        query_numbers = re.findall(r'(\d+)\s*(?:buste|booster|pack)', query)
+        title_numbers = re.findall(r'(\d+)\s*(?:buste|booster|pack)', title)
+        
+        if query_numbers and title_numbers:
+            if query_numbers[0] != title_numbers[0]:
+                return False  # Numero di buste diverso!
+        
+        return True
+    
+    def _match_expansion(self, query, title):
+        """Verifica che l'espansione/set corrisponda"""
+        
+        # Estrai parole significative dalla query (escludi parole comuni)
+        common_words = {
+            'pokemon', 'pokémon', 'tcg', 'card', 'cards', 'carte', 'box', 'display',
+            'booster', 'bundle', 'pack', 'buste', 'set', 'collection', 'collezione',
+            'ita', 'ital', 'italiano', 'italiana', 'eng', 'english', 'inglese',
+            'sealed', 'sigillato', 'new', 'nuovo', 'nuova', 'the', 'a', 'di', 'del',
+            'della', 'e', 'and', 'or', 'with', 'con', 'per', 'for', 'in', 'da',
+        }
+        
+        # Estrai parole significative dalla query
+        query_words = set(re.findall(r'[a-zA-ZàèéìòùÀÈÉÌÒÙ]{3,}', query))
+        significant_query_words = [w for w in query_words if w not in common_words]
+        
+        if not significant_query_words:
+            return True
+        
+        # Almeno il 60% delle parole significative deve essere nel titolo
+        matches = sum(1 for w in significant_query_words if w in title)
+        required = max(1, int(len(significant_query_words) * 0.6))
+        
+        return matches >= required
     
     def _match_product_type(self, search_query, title):
         """Verifica che il tipo di prodotto corrisponda"""
