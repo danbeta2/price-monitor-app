@@ -101,8 +101,25 @@ def sync_products():
     
     synced = 0
     skipped_single_cards = 0
+    deleted_singles = 0
     
     print("[Sync] Starting sync (SOLO prodotti SEALED disponibili, no carte singole)...")
+    
+    # Prima elimina automaticamente tutte le carte singole esistenti
+    all_products = Product.query.all()
+    for p in all_products:
+        if is_single_card(p.name):
+            # Elimina monitor e price records associati
+            monitors = Monitor.query.filter_by(product_id=p.id).all()
+            for monitor in monitors:
+                PriceRecord.query.filter_by(monitor_id=monitor.id).delete()
+                db.session.delete(monitor)
+            db.session.delete(p)
+            deleted_singles += 1
+    
+    if deleted_singles > 0:
+        db.session.commit()
+        print(f"[Sync] Auto-deleted {deleted_singles} single cards")
     
     try:
         page = 1
@@ -179,8 +196,9 @@ def sync_products():
         return jsonify({
             'synced': synced,
             'skipped_single_cards': skipped_single_cards,
+            'deleted_singles': deleted_singles,
             'removed': removed,
-            'message': f'Sincronizzati {synced} prodotti sealed' + (f', ignorate {skipped_single_cards} carte singole' if skipped_single_cards > 0 else '') + (f', rimossi {removed}' if removed > 0 else '')
+            'message': f'Sincronizzati {synced} prodotti sealed' + (f', eliminate {deleted_singles} carte singole' if deleted_singles > 0 else '') + (f', rimossi {removed}' if removed > 0 else '')
         })
         
     except Exception as e:
@@ -200,6 +218,9 @@ def get_monitors():
     result = []
     
     for m in monitors:
+        # Salta carte singole - non devono apparire mai
+        if m.product and is_single_card(m.product.name):
+            continue
         data = m.to_dict()
         data['product'] = m.product.to_dict() if m.product else None
         
