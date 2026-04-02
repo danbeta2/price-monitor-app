@@ -4,6 +4,7 @@ from app import db
 from app.models import Monitor, PriceRecord
 from app.services.serpapi import SerpAPIService
 from app.services.ebay import EbayService
+from app.services.gemini import GeminiService
 
 class PriceCollector:
     
@@ -67,6 +68,7 @@ class PriceCollector:
     def __init__(self):
         self.serpapi = SerpAPIService()
         self.ebay = EbayService()
+        self.gemini = GeminiService()
     
     def collect_for_monitor(self, monitor):
         """Raccoglie prezzi da tutte le fonti configurate per un monitor"""
@@ -122,17 +124,51 @@ class PriceCollector:
             return {'error': 'Nessuna fonte configurata o nessun risultato', **results}
         
         results['total_results'] = len(all_items)
+        results['ai_validated'] = 0
+        results['ai_rejected'] = 0
         today = datetime.utcnow().date()
         
-        # Processa e salva i risultati
+        # STEP 1: Pre-filtra con regole base (prezzo, keywords negativi)
+        pre_filtered = []
         for item in all_items:
-            is_valid = self._validate_result(
-                item, 
-                your_price, 
-                monitor.price_tolerance, 
-                monitor.search_query,
-                language
+            basic_valid = self._validate_result(
+                item, your_price, monitor.price_tolerance, 
+                monitor.search_query, language
             )
+            item['_basic_valid'] = basic_valid
+            pre_filtered.append(item)
+        
+        # STEP 2: Validazione AI con Gemini (solo sui prodotti che passano il filtro base)
+        items_for_ai = [item for item in pre_filtered if item['_basic_valid']]
+        
+        ai_results = {}
+        if items_for_ai and self.gemini.is_configured():
+            print(f"[Gemini] Validating {len(items_for_ai)} items for: {monitor.search_query[:50]}...")
+            ai_results = self.gemini.batch_validate(
+                monitor.search_query, 
+                items_for_ai, 
+                your_price,
+                max_items=20  # Limita per evitare prompt troppo lunghi
+            )
+        
+        # STEP 3: Salva risultati
+        ai_index = 0
+        for item in pre_filtered:
+            basic_valid = item.pop('_basic_valid', True)
+            
+            # Determina validità finale
+            if not basic_valid:
+                is_valid = False
+            elif item in items_for_ai and ai_index in ai_results:
+                is_valid, reason = ai_results.get(ai_index, (True, ""))
+                if is_valid:
+                    results['ai_validated'] += 1
+                else:
+                    results['ai_rejected'] += 1
+                    print(f"[Gemini] Rejected: {item.get('title', '')[:60]}... - {reason}")
+                ai_index += 1
+            else:
+                is_valid = basic_valid
             
             if is_valid:
                 results['valid'] += 1

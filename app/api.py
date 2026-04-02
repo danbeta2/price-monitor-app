@@ -56,6 +56,7 @@ def debug_config():
         'serpapi': bool(current_app.config.get('SERPAPI_KEY')),
         'ebay_id': bool(current_app.config.get('EBAY_CLIENT_ID')),
         'ebay_secret': bool(current_app.config.get('EBAY_CLIENT_SECRET')),
+        'gemini': bool(current_app.config.get('GEMINI_API_KEY')),
     })
 
 @api_bp.route('/api-status')
