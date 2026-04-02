@@ -4,17 +4,31 @@
 {% block page_title %}Monitor Attivi{% endblock %}
 
 {% block content %}
-<!-- Actions Bar -->
-<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
-    <div class="d-flex gap-2 flex-wrap">
-        <select class="form-select form-select-sm" id="filter-status" style="width: 150px;">
+<!-- Search Bar - Prominente al centro -->
+<div class="search-container mb-4">
+    <div class="search-wrapper">
+        <i class="bi bi-search search-icon"></i>
+        <input type="text" 
+               class="form-control form-control-lg search-input" 
+               id="search-query" 
+               placeholder="Cerca monitor per nome, SKU o query..."
+               autocomplete="off">
+        <span class="search-shortcut">⌘K</span>
+    </div>
+    <div class="search-results-count" id="search-results-info"></div>
+</div>
+
+<!-- Filters & Actions Bar -->
+<div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
+    <div class="d-flex gap-2 flex-wrap align-items-center">
+        <select class="form-select form-select-sm" id="filter-status" style="width: 140px;">
             <option value="">Tutti gli stati</option>
             <option value="has_data">Con dati</option>
             <option value="no_data">Senza dati</option>
             <option value="competitive">Competitivi</option>
             <option value="expensive">Prezzo alto</option>
         </select>
-        <select class="form-select form-select-sm" id="filter-source" style="width: 150px;">
+        <select class="form-select form-select-sm" id="filter-source" style="width: 140px;">
             <option value="">Tutte le fonti</option>
             <option value="both">Google + eBay</option>
             <option value="google_shopping">Solo Google</option>
@@ -27,11 +41,10 @@
             <option value="last_run">Ultimo aggiorn.</option>
             <option value="best_price">Miglior prezzo</option>
         </select>
-        <input type="text" class="form-control form-control-sm" id="search-query" placeholder="Cerca..." style="width: 200px;">
     </div>
     <div class="d-flex gap-2">
         <button class="btn btn-sm btn-outline-success" id="btn-collect-selected" disabled>
-            <i class="bi bi-arrow-repeat"></i> Aggiorna selezionati (<span id="selected-count">0</span>)
+            <i class="bi bi-arrow-repeat"></i> Aggiorna (<span id="selected-count">0</span>)
         </button>
         <button class="btn btn-sm btn-outline-danger" id="btn-delete-selected" disabled>
             <i class="bi bi-trash"></i> Elimina
@@ -110,7 +123,25 @@ document.addEventListener('DOMContentLoaded', () => {
     document.getElementById('filter-status').addEventListener('change', renderMonitors);
     document.getElementById('filter-source').addEventListener('change', renderMonitors);
     document.getElementById('sort-by').addEventListener('change', renderMonitors);
-    document.getElementById('search-query').addEventListener('input', debounce(renderMonitors, 300));
+    
+    // Ricerca immediata mentre digiti
+    const searchInput = document.getElementById('search-query');
+    searchInput.addEventListener('input', renderMonitors);
+    
+    // Focus sulla barra di ricerca con Cmd+K
+    document.addEventListener('keydown', (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key === 'k') {
+            e.preventDefault();
+            searchInput.focus();
+            searchInput.select();
+        }
+        // ESC per pulire la ricerca
+        if (e.key === 'Escape' && document.activeElement === searchInput) {
+            searchInput.value = '';
+            renderMonitors();
+            searchInput.blur();
+        }
+    });
     
     // Select all
     document.getElementById('select-all').addEventListener('change', function() {
@@ -187,6 +218,14 @@ function renderMonitors() {
             (m.search_query || '').toLowerCase().includes(search) ||
             (m.product?.sku || '').toLowerCase().includes(search)
         );
+    }
+    
+    // Mostra info ricerca
+    const searchInfo = document.getElementById('search-results-info');
+    if (search) {
+        searchInfo.textContent = `${filtered.length} risultati per "${search}"`;
+    } else {
+        searchInfo.textContent = '';
     }
     
     // Sort
