@@ -167,37 +167,40 @@ class PriceCollector:
         return results
     
     def _validate_result(self, item, your_price, tolerance, search_query, language='it'):
-        """Valida un risultato con controlli rigorosi"""
+        """Valida un risultato - filtri più permissivi"""
         title = item.get('title', '')
         title_lower = title.lower()
         
-        # 1. Check negative keywords
-        for keyword in self.NEGATIVE_KEYWORDS:
+        # 1. Check negative keywords (solo quelli critici)
+        critical_negatives = [
+            'lot ', ' lot', 'lotto', 'lotti', 'bundle of', 
+            'empty', 'vuoto', 'vuota', 'no cards', 'senza carte',
+            'fake', 'replica', 'proxy', 'custom', 'unofficial',
+            'repack', 'repacked', 'resealed',
+            'psa ', 'bgs ', 'cgc ', 'graded', 'gradato',
+        ]
+        for keyword in critical_negatives:
             if keyword.lower() in title_lower:
                 return False
         
-        # 2. Check lingua straniera (se lingua specificata)
-        if language in ['it', 'en']:
-            # Escludi tutte le lingue straniere
-            for lang_code, keywords in self.FOREIGN_LANGUAGE_KEYWORDS.items():
-                for kw in keywords:
-                    if kw.lower() in title_lower:
-                        return False
+        # 2. Check lingua straniera (solo se è esplicitamente un'altra lingua)
+        if language == 'it':
+            foreign_explicit = ['japanese', 'giapponese', 'korean', 'coreano', 'chinese', 'cinese']
+            for kw in foreign_explicit:
+                if kw in title_lower:
+                    return False
         
-        # 3. Verifica match prodotto
-        if not self._match_product_type(search_query, title_lower):
-            return False
-        
-        # 4. Verifica keywords principali
+        # 3. Verifica keywords principali (più permissivo)
         if not self._match_main_keywords(search_query, title_lower):
             return False
         
-        # 5. Check price range
+        # 4. Check price range (range più ampio: tolleranza x2)
         if your_price and your_price > 0:
-            min_price = your_price * (1 - tolerance / 100)
-            max_price = your_price * (1 + tolerance / 100)
+            effective_tolerance = min(tolerance * 2, 100)  # Max 100%
+            min_price = your_price * (1 - effective_tolerance / 100)
+            max_price = your_price * (1 + effective_tolerance / 100)
             price = item.get('price', 0)
-            if not (min_price <= price <= max_price):
+            if not (min_price * 0.5 <= price <= max_price * 1.5):  # Ancora più permissivo
                 return False
         
         return True
@@ -240,7 +243,7 @@ class PriceCollector:
         return True
     
     def _match_main_keywords(self, search_query, title):
-        """Verifica che le parole chiave principali siano presenti"""
+        """Verifica che le parole chiave principali siano presenti - più permissivo"""
         query_words = re.findall(r'\w+', search_query.lower())
         
         # Filtra parole da ignorare
@@ -254,11 +257,17 @@ class PriceCollector:
         if not significant_words:
             return True
         
+        # Per carte singole (contengono numeri tipo 001/191), basta match parziale
+        has_card_number = any(c.isdigit() for c in search_query)
+        
         # Conta match
         matches = sum(1 for word in significant_words if word in title)
         
-        # Richiedi almeno 60% match
-        required = max(1, int(len(significant_words) * 0.6))
+        # Per carte: basta 1 match. Per prodotti sealed: 40% match
+        if has_card_number:
+            required = 1
+        else:
+            required = max(1, int(len(significant_words) * 0.4))
         
         return matches >= required
     

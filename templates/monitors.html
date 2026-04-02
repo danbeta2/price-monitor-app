@@ -5,36 +5,59 @@
 
 {% block content %}
 <!-- Actions Bar -->
-<div class="d-flex justify-content-between align-items-center mb-4">
-    <div class="d-flex gap-2">
+<div class="d-flex justify-content-between align-items-center mb-4 flex-wrap gap-2">
+    <div class="d-flex gap-2 flex-wrap">
         <select class="form-select form-select-sm" id="filter-status" style="width: 150px;">
             <option value="">Tutti gli stati</option>
+            <option value="has_data">Con dati</option>
+            <option value="no_data">Senza dati</option>
             <option value="competitive">Competitivi</option>
-            <option value="average">Nella media</option>
             <option value="expensive">Prezzo alto</option>
         </select>
         <select class="form-select form-select-sm" id="filter-source" style="width: 150px;">
             <option value="">Tutte le fonti</option>
-            <option value="google_shopping">Google Shopping</option>
-            <option value="ebay">eBay</option>
+            <option value="both">Google + eBay</option>
+            <option value="google_shopping">Solo Google</option>
+            <option value="ebay">Solo eBay</option>
         </select>
+        <select class="form-select form-select-sm" id="sort-by" style="width: 150px;">
+            <option value="name">Ordina: Nome</option>
+            <option value="price_asc">Prezzo ↑</option>
+            <option value="price_desc">Prezzo ↓</option>
+            <option value="last_run">Ultimo aggiorn.</option>
+            <option value="best_price">Miglior prezzo</option>
+        </select>
+        <input type="text" class="form-control form-control-sm" id="search-query" placeholder="Cerca..." style="width: 200px;">
     </div>
     <div class="d-flex gap-2">
         <button class="btn btn-sm btn-outline-success" id="btn-collect-selected" disabled>
-            <i class="bi bi-arrow-repeat"></i> Aggiorna selezionati
+            <i class="bi bi-arrow-repeat"></i> Aggiorna selezionati (<span id="selected-count">0</span>)
+        </button>
+        <button class="btn btn-sm btn-outline-danger" id="btn-delete-selected" disabled>
+            <i class="bi bi-trash"></i> Elimina
         </button>
         <a href="/products" class="btn btn-sm btn-primary">
-            <i class="bi bi-plus-circle"></i> Aggiungi Monitor
+            <i class="bi bi-plus-circle"></i> Aggiungi
         </a>
     </div>
 </div>
 
+<!-- Select All -->
+<div class="mb-2">
+    <div class="form-check">
+        <input class="form-check-input" type="checkbox" id="select-all">
+        <label class="form-check-label" for="select-all">Seleziona tutti</label>
+        <span class="ms-3 text-muted" id="monitors-count">0 monitor</span>
+    </div>
+</div>
+
 <div class="card">
-    <div class="card-body">
+    <div class="card-body p-0">
         <div class="table-responsive">
-            <table class="table table-hover" id="monitors-table">
-                <thead>
+            <table class="table table-hover mb-0" id="monitors-table">
+                <thead class="table-light">
                     <tr>
+                        <th style="width: 40px;"></th>
                         <th>Prodotto</th>
                         <th>Query</th>
                         <th>Fonte</th>
@@ -46,7 +69,7 @@
                 </thead>
                 <tbody>
                     <tr>
-                        <td colspan="7" class="text-center py-5">
+                        <td colspan="8" class="text-center py-5">
                             <span class="spinner-border"></span> Caricamento...
                         </td>
                     </tr>
@@ -77,21 +100,121 @@
 {% block scripts %}
 <script>
 let priceChart = null;
+let allMonitors = [];
+let selectedMonitors = new Set();
 
-document.addEventListener('DOMContentLoaded', loadMonitors);
+document.addEventListener('DOMContentLoaded', () => {
+    loadMonitors();
+    
+    // Filtri e ricerca
+    document.getElementById('filter-status').addEventListener('change', renderMonitors);
+    document.getElementById('filter-source').addEventListener('change', renderMonitors);
+    document.getElementById('sort-by').addEventListener('change', renderMonitors);
+    document.getElementById('search-query').addEventListener('input', debounce(renderMonitors, 300));
+    
+    // Select all
+    document.getElementById('select-all').addEventListener('change', function() {
+        const checkboxes = document.querySelectorAll('.monitor-checkbox');
+        checkboxes.forEach(cb => {
+            cb.checked = this.checked;
+            const id = parseInt(cb.dataset.id);
+            if (this.checked) {
+                selectedMonitors.add(id);
+            } else {
+                selectedMonitors.delete(id);
+            }
+        });
+        updateSelectedCount();
+    });
+    
+    // Aggiorna selezionati
+    document.getElementById('btn-collect-selected').addEventListener('click', collectSelected);
+    document.getElementById('btn-delete-selected').addEventListener('click', deleteSelected);
+});
+
+function debounce(func, wait) {
+    let timeout;
+    return function(...args) {
+        clearTimeout(timeout);
+        timeout = setTimeout(() => func.apply(this, args), wait);
+    };
+}
 
 async function loadMonitors() {
     const res = await fetch('/api/monitors');
     const data = await res.json();
-    
+    allMonitors = data.monitors || [];
+    renderMonitors();
+}
+
+function renderMonitors() {
     const tbody = document.querySelector('#monitors-table tbody');
     
-    if (!data.monitors.length) {
+    // Applica filtri
+    let filtered = [...allMonitors];
+    
+    const statusFilter = document.getElementById('filter-status').value;
+    const sourceFilter = document.getElementById('filter-source').value;
+    const sortBy = document.getElementById('sort-by').value;
+    const search = document.getElementById('search-query').value.toLowerCase();
+    
+    // Filtro status
+    if (statusFilter === 'has_data') {
+        filtered = filtered.filter(m => m.total_records > 0);
+    } else if (statusFilter === 'no_data') {
+        filtered = filtered.filter(m => !m.total_records || m.total_records === 0);
+    } else if (statusFilter === 'competitive') {
+        filtered = filtered.filter(m => {
+            if (!m.best_price || !m.product?.price) return false;
+            return m.product.price <= m.best_price * 1.05;
+        });
+    } else if (statusFilter === 'expensive') {
+        filtered = filtered.filter(m => {
+            if (!m.best_price || !m.product?.price) return false;
+            return m.product.price > m.best_price * 1.1;
+        });
+    }
+    
+    // Filtro source
+    if (sourceFilter) {
+        filtered = filtered.filter(m => m.source === sourceFilter);
+    }
+    
+    // Filtro ricerca
+    if (search) {
+        filtered = filtered.filter(m => 
+            (m.product?.name || '').toLowerCase().includes(search) ||
+            (m.search_query || '').toLowerCase().includes(search) ||
+            (m.product?.sku || '').toLowerCase().includes(search)
+        );
+    }
+    
+    // Sort
+    filtered.sort((a, b) => {
+        switch (sortBy) {
+            case 'name':
+                return (a.product?.name || '').localeCompare(b.product?.name || '');
+            case 'price_asc':
+                return (a.product?.price || 0) - (b.product?.price || 0);
+            case 'price_desc':
+                return (b.product?.price || 0) - (a.product?.price || 0);
+            case 'last_run':
+                return new Date(b.last_run_at || 0) - new Date(a.last_run_at || 0);
+            case 'best_price':
+                return (a.best_price || 999999) - (b.best_price || 999999);
+            default:
+                return 0;
+        }
+    });
+    
+    document.getElementById('monitors-count').textContent = `${filtered.length} monitor`;
+    
+    if (!filtered.length) {
         tbody.innerHTML = `
             <tr>
-                <td colspan="7" class="text-center py-5">
+                <td colspan="8" class="text-center py-5">
                     <i class="bi bi-inbox" style="font-size: 3rem; color: #ccc;"></i>
-                    <p class="mt-3 text-muted">Nessun monitor attivo</p>
+                    <p class="mt-3 text-muted">Nessun monitor trovato</p>
                     <a href="/products" class="btn btn-primary">Aggiungi il primo monitor</a>
                 </td>
             </tr>
@@ -99,49 +222,70 @@ async function loadMonitors() {
         return;
     }
     
-    tbody.innerHTML = data.monitors.map(m => {
+    tbody.innerHTML = filtered.map(m => {
         const product = m.product || {};
         const priceDiff = m.best_price && product.price ? 
             ((product.price - m.best_price) / product.price * 100).toFixed(1) : null;
         
         let priceClass = '';
-        let priceNote = '';
+        let diffText = '';
         if (priceDiff !== null) {
-            priceClass = priceDiff > 0 ? 'text-success' : (priceDiff < -5 ? 'text-danger' : '');
+            const numDiff = parseFloat(priceDiff);
+            if (numDiff > 0) {
+                priceClass = 'text-success';
+                diffText = `(+${priceDiff}%)`;
+            } else if (numDiff < -5) {
+                priceClass = 'text-danger';
+                diffText = `(${priceDiff}%)`;
+            } else {
+                diffText = `(${priceDiff}%)`;
+            }
         }
+        
+        let priceNote = '';
         if (m.best_price_unvalidated) {
             priceNote = '<br><small class="text-warning">⚠️ non validato</small>';
         }
         
         const recordsInfo = m.total_records > 0 ? 
-            `<small class="text-muted">${m.valid_records}/${m.total_records} validi</small>` : '';
+            `<small class="text-muted">${m.valid_records}/${m.total_records} validi</small>` : 
+            '<small class="text-muted">-</small>';
+        
+        const sourceBadge = m.source === 'both' ? 
+            '<span class="badge bg-info">Google + eBay</span>' :
+            (m.source === 'google_shopping' ? 
+                '<span class="badge bg-primary">Google</span>' : 
+                '<span class="badge bg-warning text-dark">eBay</span>');
+        
+        const isChecked = selectedMonitors.has(m.id) ? 'checked' : '';
         
         return `
-            <tr>
+            <tr data-id="${m.id}">
+                <td>
+                    <input type="checkbox" class="form-check-input monitor-checkbox" 
+                           data-id="${m.id}" ${isChecked} onchange="toggleSelection(${m.id}, this.checked)">
+                </td>
                 <td>
                     <div class="d-flex align-items-center">
                         <img src="${product.image_url || '/static/img/placeholder.png'}" 
-                             class="me-2" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;">
+                             class="me-2" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;"
+                             onerror="this.src='/static/img/placeholder.png'">
                         <div>
-                            <div class="fw-semibold">${escapeHtml((product.name || '').substring(0, 40))}...</div>
+                            <div class="fw-semibold text-truncate" style="max-width: 200px;" title="${escapeHtml(product.name || '')}">${escapeHtml((product.name || '').substring(0, 35))}${(product.name || '').length > 35 ? '...' : ''}</div>
                             <small class="text-muted">${product.sku || ''}</small>
                         </div>
                     </div>
                 </td>
-                <td><code class="small">${escapeHtml(m.search_query.substring(0, 30))}...</code></td>
-                <td>
-                    <span class="badge ${m.source === 'google_shopping' ? 'bg-primary' : 'bg-warning'}">
-                        ${m.source === 'google_shopping' ? 'Google' : 'eBay'}
-                    </span>
-                </td>
+                <td><code class="small text-truncate d-block" style="max-width: 150px;" title="${escapeHtml(m.search_query)}">${escapeHtml(m.search_query.substring(0, 25))}${m.search_query.length > 25 ? '...' : ''}</code></td>
+                <td>${sourceBadge}</td>
                 <td><strong>€${(product.price || 0).toFixed(2)}</strong></td>
                 <td class="${priceClass}">
                     ${m.best_price ? `€${m.best_price.toFixed(2)}` : '-'}
-                    ${priceDiff !== null ? `<small>(${priceDiff > 0 ? '+' : ''}${priceDiff}%)</small>` : ''}
+                    ${diffText ? `<small>${diffText}</small>` : ''}
                     ${priceNote}
                     <br>${recordsInfo}
                 </td>
-                <td>${m.last_run_at ? new Date(m.last_run_at).toLocaleString('it-IT') : 'Mai'}</td>
+                <td>${m.last_run_at ? new Date(m.last_run_at).toLocaleString('it-IT', {dateStyle: 'short', timeStyle: 'short'}) : 'Mai'}</td>
                 <td>
                     <div class="btn-group btn-group-sm">
                         <button class="btn btn-outline-primary" onclick="viewPrices(${m.id})" title="Vedi prezzi">
@@ -160,6 +304,88 @@ async function loadMonitors() {
     }).join('');
 }
 
+function toggleSelection(id, checked) {
+    if (checked) {
+        selectedMonitors.add(id);
+    } else {
+        selectedMonitors.delete(id);
+    }
+    updateSelectedCount();
+}
+
+function updateSelectedCount() {
+    const count = selectedMonitors.size;
+    document.getElementById('selected-count').textContent = count;
+    document.getElementById('btn-collect-selected').disabled = count === 0;
+    document.getElementById('btn-delete-selected').disabled = count === 0;
+    
+    // Update select-all checkbox
+    const allCheckboxes = document.querySelectorAll('.monitor-checkbox');
+    const selectAll = document.getElementById('select-all');
+    if (allCheckboxes.length > 0) {
+        selectAll.checked = count === allCheckboxes.length;
+        selectAll.indeterminate = count > 0 && count < allCheckboxes.length;
+    }
+}
+
+async function collectSelected() {
+    if (selectedMonitors.size === 0) return;
+    
+    const btn = document.getElementById('btn-collect-selected');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> Raccolta...';
+    
+    const ids = Array.from(selectedMonitors);
+    let success = 0;
+    let failed = 0;
+    
+    for (const id of ids) {
+        try {
+            const res = await fetch(`/api/monitors/${id}/collect`, { method: 'POST' });
+            const data = await res.json();
+            if (data.error) {
+                failed++;
+            } else {
+                success++;
+            }
+            btn.innerHTML = `<span class="spinner-border spinner-border-sm"></span> ${success + failed}/${ids.length}`;
+        } catch (e) {
+            failed++;
+        }
+    }
+    
+    btn.disabled = false;
+    btn.innerHTML = `<i class="bi bi-arrow-repeat"></i> Aggiorna selezionati (<span id="selected-count">${selectedMonitors.size}</span>)`;
+    
+    alert(`Completato! Successo: ${success}, Falliti: ${failed}`);
+    loadMonitors();
+}
+
+async function deleteSelected() {
+    if (selectedMonitors.size === 0) return;
+    
+    if (!confirm(`Eliminare ${selectedMonitors.size} monitor selezionati?`)) return;
+    
+    const btn = document.getElementById('btn-delete-selected');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    
+    const ids = Array.from(selectedMonitors);
+    
+    for (const id of ids) {
+        try {
+            await fetch(`/api/monitors/${id}`, { method: 'DELETE' });
+        } catch (e) {}
+    }
+    
+    selectedMonitors.clear();
+    updateSelectedCount();
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-trash"></i> Elimina';
+    
+    loadMonitors();
+}
+
 async function viewPrices(monitorId) {
     const modal = new bootstrap.Modal(document.getElementById('priceModal'));
     const body = document.getElementById('price-modal-body');
@@ -167,16 +393,15 @@ async function viewPrices(monitorId) {
     body.innerHTML = '<div class="text-center py-5"><span class="spinner-border"></span></div>';
     modal.show();
     
-    const res = await fetch(`/api/monitors/${monitorId}/prices`);
+    const res = await fetch(`/api/monitors/${monitorId}/prices?show_all=true`);
     const data = await res.json();
     
     body.innerHTML = renderPriceModal(data);
     
-    if (data.history.length > 0) {
+    if (data.history && data.history.length > 0) {
         renderChart(data.history, data.your_price);
     }
     
-    // Toggle per mostrare/nascondere prezzi non validi
     const toggle = document.getElementById('showAllPrices');
     if (toggle) {
         toggle.addEventListener('change', function() {
@@ -189,24 +414,20 @@ async function viewPrices(monitorId) {
 }
 
 function renderPriceModal(data) {
-    let html = '';
-    
-    // Header
-    html += `
+    let html = `
         <div class="mb-4">
-            <h4>${escapeHtml(data.product_name)}</h4>
-            <p class="text-muted">Query: <code>${escapeHtml(data.search_query)}</code></p>
+            <h4>${escapeHtml(data.product_name || 'Prodotto')}</h4>
+            <p class="text-muted">Query: <code>${escapeHtml(data.search_query || '')}</code></p>
         </div>
     `;
     
-    // Stats
-    if (data.stats.total > 0) {
+    if (data.stats && data.stats.total > 0) {
         const yourPrice = data.your_price || 0;
         const avgPrice = data.stats.avg_price || 0;
         let positionBadge = '';
         
         if (yourPrice && avgPrice) {
-            if (yourPrice <= data.stats.min_price * 1.05) {
+            if (yourPrice <= (data.stats.min_price || 0) * 1.05) {
                 positionBadge = '<span class="badge bg-success">🏆 Miglior prezzo!</span>';
             } else if (yourPrice < avgPrice) {
                 positionBadge = '<span class="badge bg-info">✓ Sotto la media</span>';
@@ -217,40 +438,37 @@ function renderPriceModal(data) {
         
         html += `
             <div class="alert alert-primary d-flex justify-content-between align-items-center mb-4">
-                <div>
-                    <strong>Il tuo prezzo:</strong> €${yourPrice.toFixed(2)}
-                </div>
+                <div><strong>Il tuo prezzo:</strong> €${yourPrice.toFixed(2)}</div>
                 ${positionBadge}
             </div>
-            
-            <div class="row mb-4">
-                <div class="col-md-2">
-                    <div class="text-center p-3 bg-light rounded">
-                        <div class="h4 text-success mb-0">€${data.stats.min_price.toFixed(2)}</div>
+            <div class="row mb-4 g-2">
+                <div class="col-6 col-md-2">
+                    <div class="text-center p-2 bg-light rounded">
+                        <div class="h5 text-success mb-0">€${(data.stats.min_price || 0).toFixed(2)}</div>
                         <small class="text-muted">Min</small>
                     </div>
                 </div>
-                <div class="col-md-2">
-                    <div class="text-center p-3 bg-light rounded">
-                        <div class="h4 mb-0">€${data.stats.avg_price.toFixed(2)}</div>
+                <div class="col-6 col-md-2">
+                    <div class="text-center p-2 bg-light rounded">
+                        <div class="h5 mb-0">€${(data.stats.avg_price || 0).toFixed(2)}</div>
                         <small class="text-muted">Media</small>
                     </div>
                 </div>
-                <div class="col-md-2">
-                    <div class="text-center p-3 bg-light rounded">
-                        <div class="h4 text-danger mb-0">€${data.stats.max_price.toFixed(2)}</div>
+                <div class="col-6 col-md-2">
+                    <div class="text-center p-2 bg-light rounded">
+                        <div class="h5 text-danger mb-0">€${(data.stats.max_price || 0).toFixed(2)}</div>
                         <small class="text-muted">Max</small>
                     </div>
                 </div>
-                <div class="col-md-3">
-                    <div class="text-center p-3 bg-light rounded">
-                        <div class="h4 mb-0">${data.stats.total}</div>
+                <div class="col-6 col-md-3">
+                    <div class="text-center p-2 bg-light rounded">
+                        <div class="h5 mb-0">${data.stats.total || 0}</div>
                         <small class="text-muted">Prezzi rilevati</small>
                     </div>
                 </div>
-                <div class="col-md-3">
-                    <div class="text-center p-3 bg-light rounded">
-                        <div class="h4 mb-0">${data.stats.sellers}</div>
+                <div class="col-12 col-md-3">
+                    <div class="text-center p-2 bg-light rounded">
+                        <div class="h5 mb-0">${data.stats.sellers || 0}</div>
                         <small class="text-muted">Venditori</small>
                     </div>
                 </div>
@@ -258,69 +476,51 @@ function renderPriceModal(data) {
         `;
     }
     
-    // Chart
-    if (data.history.length > 0) {
-        html += `
-            <div class="mb-4" style="height: 300px;">
-                <canvas id="price-chart"></canvas>
-            </div>
-        `;
+    if (data.history && data.history.length > 0) {
+        html += `<div class="mb-4" style="height: 250px;"><canvas id="price-chart"></canvas></div>`;
     }
     
-    // Recent prices table
-    if (data.prices.length > 0) {
-        const validCount = data.stats.valid_count || data.prices.filter(p => p.is_valid).length;
-        const totalCount = data.stats.total || data.prices.length;
+    if (data.prices && data.prices.length > 0) {
+        const validCount = data.prices.filter(p => p.is_valid).length;
+        const totalCount = data.prices.length;
         
         html += `
             <div class="d-flex justify-content-between align-items-center mb-3">
-                <h5 class="mb-0">Prezzi rilevati (${validCount} validi su ${totalCount})</h5>
+                <h6 class="mb-0">Prezzi (${validCount} validi su ${totalCount})</h6>
                 <div class="form-check form-switch">
                     <input class="form-check-input" type="checkbox" id="showAllPrices" checked>
-                    <label class="form-check-label small" for="showAllPrices">Mostra tutti</label>
+                    <label class="form-check-label small" for="showAllPrices">Mostra filtrati</label>
                 </div>
             </div>
-            <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
-                <table class="table table-sm">
-                    <thead>
-                        <tr>
-                            <th></th>
-                            <th>Titolo</th>
-                            <th>Prezzo</th>
-                            <th>vs Tuo</th>
-                            <th>Venditore</th>
-                        </tr>
+            <div class="table-responsive" style="max-height: 300px;">
+                <table class="table table-sm table-hover">
+                    <thead class="table-light sticky-top">
+                        <tr><th></th><th>Titolo</th><th>Prezzo</th><th>vs Tuo</th><th>Fonte</th><th>Venditore</th></tr>
                     </thead>
                     <tbody>
                         ${data.prices.map(p => {
                             const diff = data.your_price ? (p.price - data.your_price) : null;
-                            const diffClass = diff !== null ? (diff < 0 ? 'text-success' : 'text-danger') : '';
-                            const validBadge = p.is_valid 
-                                ? '<span class="badge bg-success" title="Valido">✓</span>' 
-                                : '<span class="badge bg-secondary" title="Filtrato">✗</span>';
+                            const diffClass = diff !== null ? (diff < 0 ? 'text-success' : (diff > 0 ? 'text-danger' : '')) : '';
+                            const validBadge = p.is_valid ? '<span class="badge bg-success">✓</span>' : '<span class="badge bg-secondary">✗</span>';
                             const rowClass = p.is_valid ? '' : 'opacity-50';
+                            const sourceBadge = p.source === 'google_shopping' ? '<span class="badge bg-primary">G</span>' : '<span class="badge bg-warning text-dark">E</span>';
                             return `
                                 <tr class="${rowClass}" data-valid="${p.is_valid}">
                                     <td>${validBadge}</td>
-                                    <td><a href="${p.url}" target="_blank" title="${escapeHtml(p.title)}">${escapeHtml(p.title.substring(0, 50))}...</a></td>
+                                    <td><a href="${p.url}" target="_blank" class="text-truncate d-block" style="max-width: 200px;" title="${escapeHtml(p.title)}">${escapeHtml(p.title.substring(0, 40))}...</a></td>
                                     <td><strong>€${p.price.toFixed(2)}</strong></td>
-                                    <td class="${diffClass}">
-                                        ${diff !== null ? `${diff > 0 ? '+' : ''}€${diff.toFixed(2)}` : '-'}
-                                    </td>
-                                    <td>${escapeHtml(p.seller_name || '-')}</td>
+                                    <td class="${diffClass}">${diff !== null ? `${diff > 0 ? '+' : ''}€${diff.toFixed(2)}` : '-'}</td>
+                                    <td>${sourceBadge}</td>
+                                    <td class="text-truncate" style="max-width: 100px;">${escapeHtml(p.seller_name || '-')}</td>
                                 </tr>
                             `;
                         }).join('')}
                     </tbody>
                 </table>
             </div>
-            <small class="text-muted">
-                <span class="badge bg-success">✓</span> = prodotto corretto | 
-                <span class="badge bg-secondary">✗</span> = filtrato (bundle, lotto, lingua diversa, ecc.)
-            </small>
         `;
     } else {
-        html += '<p class="text-center text-muted">Nessun prezzo ancora rilevato. Esegui una raccolta.</p>';
+        html += '<p class="text-center text-muted">Nessun prezzo rilevato. Clicca "Raccogli prezzi".</p>';
     }
     
     return html;
@@ -333,68 +533,23 @@ function renderChart(history, yourPrice) {
     if (priceChart) priceChart.destroy();
     
     const datasets = [
-        {
-            label: 'Min',
-            data: history.map(h => h.min_price),
-            borderColor: '#198754',
-            backgroundColor: 'rgba(25, 135, 84, 0.1)',
-            fill: false,
-            tension: 0.3,
-        },
-        {
-            label: 'Media',
-            data: history.map(h => h.avg_price),
-            borderColor: '#0d6efd',
-            backgroundColor: 'rgba(13, 110, 253, 0.1)',
-            fill: true,
-            tension: 0.3,
-        },
-        {
-            label: 'Max',
-            data: history.map(h => h.max_price),
-            borderColor: '#dc3545',
-            backgroundColor: 'rgba(220, 53, 69, 0.1)',
-            fill: false,
-            tension: 0.3,
-        }
+        { label: 'Min', data: history.map(h => h.min_price), borderColor: '#198754', fill: false, tension: 0.3 },
+        { label: 'Media', data: history.map(h => h.avg_price), borderColor: '#0d6efd', backgroundColor: 'rgba(13, 110, 253, 0.1)', fill: true, tension: 0.3 },
+        { label: 'Max', data: history.map(h => h.max_price), borderColor: '#dc3545', fill: false, tension: 0.3 }
     ];
     
     if (yourPrice) {
-        datasets.push({
-            label: 'Tuo Prezzo',
-            data: history.map(() => yourPrice),
-            borderColor: '#ff9500',
-            borderWidth: 3,
-            borderDash: [10, 5],
-            fill: false,
-            pointRadius: 0,
-        });
+        datasets.push({ label: 'Tuo', data: history.map(() => yourPrice), borderColor: '#ff9500', borderWidth: 2, borderDash: [5, 5], fill: false, pointRadius: 0 });
     }
     
     priceChart = new Chart(ctx, {
         type: 'line',
-        data: {
-            labels: history.map(h => h.date),
-            datasets
-        },
+        data: { labels: history.map(h => h.date), datasets },
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            scales: {
-                y: {
-                    beginAtZero: false,
-                    ticks: {
-                        callback: v => '€' + v.toFixed(0)
-                    }
-                }
-            },
-            plugins: {
-                tooltip: {
-                    callbacks: {
-                        label: ctx => ctx.dataset.label + ': €' + ctx.raw.toFixed(2)
-                    }
-                }
-            }
+            scales: { y: { beginAtZero: false, ticks: { callback: v => '€' + v.toFixed(0) } } },
+            plugins: { tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': €' + ctx.raw.toFixed(2) } } }
         }
     });
 }
@@ -404,24 +559,30 @@ async function collectPrices(monitorId, btn) {
     btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
     btn.disabled = true;
     
-    const res = await fetch(`/api/monitors/${monitorId}/collect`, { method: 'POST' });
-    const data = await res.json();
+    try {
+        const res = await fetch(`/api/monitors/${monitorId}/collect`, { method: 'POST' });
+        const data = await res.json();
+        
+        if (data.error) {
+            alert('Errore: ' + data.error);
+        } else {
+            alert(`Raccolti ${data.saved} prezzi (${data.valid} validi)`);
+            loadMonitors();
+        }
+    } catch (e) {
+        alert('Errore: ' + e.message);
+    }
     
     btn.innerHTML = originalHtml;
     btn.disabled = false;
-    
-    if (data.error) {
-        alert('Errore: ' + data.error);
-    } else {
-        alert(`Raccolti ${data.saved} prezzi (${data.valid} validi)`);
-        loadMonitors();
-    }
 }
 
 async function deleteMonitor(monitorId) {
     if (!confirm('Eliminare questo monitor?')) return;
     
     await fetch(`/api/monitors/${monitorId}`, { method: 'DELETE' });
+    selectedMonitors.delete(monitorId);
+    updateSelectedCount();
     loadMonitors();
 }
 
