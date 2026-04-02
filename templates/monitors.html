@@ -637,10 +637,17 @@ function renderPriceModal(data) {
                     <label class="form-check-label small" for="showAllPrices">Mostra filtrati</label>
                 </div>
             </div>
-            <div class="table-responsive" style="max-height: 300px;">
+            <div class="table-responsive" style="max-height: 400px;">
                 <table class="table table-sm table-hover">
                     <thead class="table-light sticky-top">
-                        <tr><th></th><th>Titolo</th><th>Prezzo</th><th>vs Tuo</th><th>Fonte</th><th>Venditore</th></tr>
+                        <tr>
+                            <th style="width: 40px;"></th>
+                            <th style="min-width: 350px;">Titolo</th>
+                            <th style="width: 90px;">Prezzo</th>
+                            <th style="width: 90px;">vs Tuo</th>
+                            <th style="width: 50px;">Fonte</th>
+                            <th style="width: 120px;">Venditore</th>
+                        </tr>
                     </thead>
                     <tbody>
                         ${data.prices.map(p => {
@@ -648,15 +655,21 @@ function renderPriceModal(data) {
                             const diffClass = diff !== null ? (diff < 0 ? 'text-success' : (diff > 0 ? 'text-danger' : '')) : '';
                             const validBadge = p.is_valid ? '<span class="badge bg-success">✓</span>' : '<span class="badge bg-secondary">✗</span>';
                             const rowClass = p.is_valid ? '' : 'opacity-50';
-                            const sourceBadge = p.source === 'google_shopping' ? '<span class="badge bg-primary">G</span>' : '<span class="badge bg-warning text-dark">E</span>';
+                            const sourceBadge = p.source === 'google_shopping' ? '<span class="badge bg-primary">G</span>' : 
+                                               (p.source === 'google_web' ? '<span class="badge bg-info">W</span>' : 
+                                               '<span class="badge bg-warning text-dark">E</span>');
                             return `
-                                <tr class="${rowClass}" data-valid="${p.is_valid}">
+                                <tr class="${rowClass}" data-valid="${p.is_valid}" style="cursor: pointer;" onclick="window.open('${p.url}', '_blank')">
                                     <td>${validBadge}</td>
-                                    <td><a href="${p.url}" target="_blank" class="text-truncate d-block" style="max-width: 200px;" title="${escapeHtml(p.title)}">${escapeHtml(p.title.substring(0, 40))}...</a></td>
+                                    <td>
+                                        <a href="${p.url}" target="_blank" class="text-decoration-none" title="${escapeHtml(p.title)}" onclick="event.stopPropagation();">
+                                            ${escapeHtml(p.title)}
+                                        </a>
+                                    </td>
                                     <td><strong>€${p.price.toFixed(2)}</strong></td>
                                     <td class="${diffClass}">${diff !== null ? `${diff > 0 ? '+' : ''}€${diff.toFixed(2)}` : '-'}</td>
                                     <td>${sourceBadge}</td>
-                                    <td class="text-truncate" style="max-width: 100px;">${escapeHtml(p.seller_name || '-')}</td>
+                                    <td class="text-truncate" style="max-width: 120px;">${escapeHtml(p.seller_name || '-')}</td>
                                 </tr>
                             `;
                         }).join('')}
