@@ -643,7 +643,10 @@ def cleanup_single_cards():
 @api_bp.route('/monitors/create-all', methods=['POST'])
 def create_monitors_for_all():
     """Crea UN monitor per ogni prodotto SEALED disponibile (esclude carte singole)"""
-    data = request.json or {}
+    try:
+        data = request.get_json(silent=True) or {}
+    except:
+        data = {}
     price_tolerance = data.get('price_tolerance', 50)
     language = data.get('language', 'it')
     

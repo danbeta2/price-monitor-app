@@ -52,7 +52,11 @@ async function fullSync() {
     try {
         // STEP 1: Sincronizza WooCommerce (33%)
         updateProgress(10, '1/3 Sincronizzazione WooCommerce...');
-        const syncRes = await fetch('/api/sync-products', { method: 'POST' });
+        const syncRes = await fetch('/api/sync-products', { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
         const syncData = await syncRes.json();
         
         if (syncData.error) {
@@ -64,7 +68,11 @@ async function fullSync() {
         
         // STEP 2: Crea Monitor (66%)
         updateProgress(40, '2/3 Creazione monitor...');
-        const monitorRes = await fetch('/api/monitors/create-all', { method: 'POST' });
+        const monitorRes = await fetch('/api/monitors/create-all', { 
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({})
+        });
         const monitorData = await monitorRes.json();
         
         if (monitorData.error) {
