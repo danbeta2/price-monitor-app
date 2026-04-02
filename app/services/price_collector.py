@@ -205,13 +205,14 @@ class PriceCollector:
         if not self._match_main_keywords(search_query, title_lower):
             return False
         
-        # 4. Check price range (range più ampio: tolleranza x2)
+        # 4. Check price range - DEVE essere nel range ragionevole
+        # Un prodotto sealed non può costare il 5% del prezzo normale
         if your_price and your_price > 0:
-            effective_tolerance = min(tolerance * 2, 100)  # Max 100%
-            min_price = your_price * (1 - effective_tolerance / 100)
-            max_price = your_price * (1 + effective_tolerance / 100)
             price = item.get('price', 0)
-            if not (min_price * 0.5 <= price <= max_price * 1.5):  # Ancora più permissivo
+            # Range fisso: minimo 50% del tuo prezzo, massimo 200%
+            min_price = your_price * 0.5  # Non meno del 50%
+            max_price = your_price * 2.0  # Non più del 200%
+            if not (min_price <= price <= max_price):
                 return False
         
         return True
