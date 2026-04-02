@@ -305,30 +305,62 @@ def get_monitor_prices(monitor_id):
     monitor = Monitor.query.get_or_404(monitor_id)
     show_all = request.args.get('show_all', 'false').lower() == 'true'
     
+    # Prezzo di riferimento per filtrare outlier
+    your_price = monitor.product.price if monitor.product else None
+    
+    # Calcola range ragionevole per escludere outlier
+    # Se il tuo prezzo è €100, accettiamo da €10 a €500 (10x range)
+    min_reasonable = your_price * 0.1 if your_price else 0.01
+    max_reasonable = your_price * 5 if your_price else 100000  # Max 5x il tuo prezzo
+    
     # Get prices - tutti o solo validi
     query = PriceRecord.query.filter_by(monitor_id=monitor_id)
     if not show_all:
         query = query.filter_by(is_valid=True)
-    prices = query.order_by(PriceRecord.fetched_at.desc()).limit(50).all()
+    prices = query.order_by(PriceRecord.fetched_at.desc()).limit(100).all()
     
     # Se non ci sono validi, mostra tutti
     if len(prices) == 0 and not show_all:
         prices = PriceRecord.query.filter_by(
             monitor_id=monitor_id
-        ).order_by(PriceRecord.fetched_at.desc()).limit(50).all()
+        ).order_by(PriceRecord.fetched_at.desc()).limit(100).all()
     
-    # Stats su tutti i record (non solo validi) per avere sempre dati
-    stats = db.session.query(
+    # Stats SOLO su record validi e con prezzo ragionevole (esclude outlier)
+    stats_query = db.session.query(
         func.min(PriceRecord.price).label('min_price'),
         func.max(PriceRecord.price).label('max_price'),
         func.avg(PriceRecord.price).label('avg_price'),
         func.count(PriceRecord.id).label('total'),
         func.count(func.distinct(PriceRecord.seller_name)).label('sellers'),
     ).filter(
-        PriceRecord.monitor_id == monitor_id
+        PriceRecord.monitor_id == monitor_id,
+        PriceRecord.is_valid == True,
+        PriceRecord.price >= min_reasonable,
+        PriceRecord.price <= max_reasonable
+    )
+    stats = stats_query.first()
+    
+    # Fallback: se non ci sono record validi nel range, usa tutti ma con filtro outlier
+    if not stats.total or stats.total == 0:
+        stats = db.session.query(
+            func.min(PriceRecord.price).label('min_price'),
+            func.max(PriceRecord.price).label('max_price'),
+            func.avg(PriceRecord.price).label('avg_price'),
+            func.count(PriceRecord.id).label('total'),
+            func.count(func.distinct(PriceRecord.seller_name)).label('sellers'),
+        ).filter(
+            PriceRecord.monitor_id == monitor_id,
+            PriceRecord.price >= min_reasonable,
+            PriceRecord.price <= max_reasonable
+        ).first()
+    
+    # Stats totali per confronto
+    total_stats = db.session.query(
+        func.count(PriceRecord.id).label('total_count'),
+    ).filter(
+        PriceRecord.monitor_id == monitor_id,
     ).first()
     
-    # Stats solo validi per confronto
     valid_stats = db.session.query(
         func.count(PriceRecord.id).label('valid_count'),
     ).filter(
@@ -338,7 +370,7 @@ def get_monitor_prices(monitor_id):
     
     thirty_days_ago = datetime.utcnow() - timedelta(days=30)
     
-    # History - prova prima con solo validi, poi tutti
+    # History - solo record validi con filtro outlier
     history = db.session.query(
         func.date(PriceRecord.fetched_at).label('date'),
         func.min(PriceRecord.price).label('min_price'),
@@ -347,7 +379,24 @@ def get_monitor_prices(monitor_id):
     ).filter(
         PriceRecord.monitor_id == monitor_id,
         PriceRecord.fetched_at >= thirty_days_ago,
+        PriceRecord.is_valid == True,
+        PriceRecord.price >= min_reasonable,
+        PriceRecord.price <= max_reasonable
     ).group_by(func.date(PriceRecord.fetched_at)).order_by(func.date(PriceRecord.fetched_at)).all()
+    
+    # Fallback history senza filtro valid se vuoto
+    if not history:
+        history = db.session.query(
+            func.date(PriceRecord.fetched_at).label('date'),
+            func.min(PriceRecord.price).label('min_price'),
+            func.avg(PriceRecord.price).label('avg_price'),
+            func.max(PriceRecord.price).label('max_price'),
+        ).filter(
+            PriceRecord.monitor_id == monitor_id,
+            PriceRecord.fetched_at >= thirty_days_ago,
+            PriceRecord.price >= min_reasonable,
+            PriceRecord.price <= max_reasonable
+        ).group_by(func.date(PriceRecord.fetched_at)).order_by(func.date(PriceRecord.fetched_at)).all()
     
     return jsonify({
         'prices': [p.to_dict() for p in prices],
@@ -355,9 +404,11 @@ def get_monitor_prices(monitor_id):
             'min_price': float(stats.min_price) if stats.min_price else None,
             'max_price': float(stats.max_price) if stats.max_price else None,
             'avg_price': round(float(stats.avg_price), 2) if stats.avg_price else None,
-            'total': stats.total,
+            'total': stats.total if stats.total else 0,
+            'total_all': total_stats.total_count if total_stats else 0,
             'valid_count': valid_stats.valid_count if valid_stats else 0,
-            'sellers': stats.sellers,
+            'sellers': stats.sellers if stats.sellers else 0,
+            'outliers_excluded': (total_stats.total_count if total_stats else 0) - (stats.total if stats.total else 0),
         },
         'history': [
             {
