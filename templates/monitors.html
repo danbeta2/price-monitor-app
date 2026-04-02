@@ -581,10 +581,31 @@ function renderPriceModal(data) {
             }
         }
         
+        const diffFromAvg = yourPrice - avgPrice;
+        const diffPercent = avgPrice > 0 ? ((diffFromAvg / avgPrice) * 100).toFixed(1) : 0;
+        const diffClass = diffFromAvg < 0 ? 'text-success' : (diffFromAvg > 0 ? 'text-danger' : 'text-muted');
+        const diffSign = diffFromAvg > 0 ? '+' : '';
+        
         html += `
-            <div class="alert alert-primary d-flex justify-content-between align-items-center mb-4">
-                <div><strong>Il tuo prezzo:</strong> €${yourPrice.toFixed(2)}</div>
-                ${positionBadge}
+            <div class="card mb-4" style="border: 3px solid #ffc107; background: linear-gradient(135deg, #fff9e6, #fff3cd);">
+                <div class="card-body py-3">
+                    <div class="row align-items-center">
+                        <div class="col-auto">
+                            <span style="font-size: 2.5rem;">🏷️</span>
+                        </div>
+                        <div class="col">
+                            <div class="text-muted small mb-1">IL TUO PREZZO</div>
+                            <div class="h2 mb-0" style="color: #d97706;">€${yourPrice.toFixed(2)}</div>
+                        </div>
+                        <div class="col-auto text-end">
+                            <div class="${diffClass}" style="font-size: 1.2rem;">
+                                ${diffSign}€${Math.abs(diffFromAvg).toFixed(2)} (${diffSign}${diffPercent}%)
+                            </div>
+                            <div class="small text-muted">vs media mercato</div>
+                            ${positionBadge}
+                        </div>
+                    </div>
+                </div>
             </div>
             <div class="row mb-4 g-2">
                 <div class="col-6 col-md-2">

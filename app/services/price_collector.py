@@ -206,12 +206,12 @@ class PriceCollector:
             return False
         
         # 4. Check price range - DEVE essere nel range ragionevole
-        # Un prodotto sealed non può costare il 5% del prezzo normale
+        # Un Display Box non può costare la metà del normale - è probabilmente un'altra cosa
         if your_price and your_price > 0:
             price = item.get('price', 0)
-            # Range fisso: minimo 50% del tuo prezzo, massimo 200%
-            min_price = your_price * 0.5  # Non meno del 50%
-            max_price = your_price * 2.0  # Non più del 200%
+            # Range stretto: minimo 70% del tuo prezzo, massimo 180%
+            min_price = your_price * 0.70  # Non meno del 70%
+            max_price = your_price * 1.80  # Non più del 180%
             if not (min_price <= price <= max_price):
                 return False
         
