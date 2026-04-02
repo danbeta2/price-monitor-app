@@ -80,12 +80,16 @@ class PriceCollector:
         
         your_price = monitor.product.price if monitor.product else None
         language = getattr(monitor, 'language', 'it') or 'it'
-        source = getattr(monitor, 'source', 'both') or 'both'
+        source = getattr(monitor, 'source', 'all') or 'all'
         
         # Determina quali fonti usare
         sources_to_use = []
-        if source == 'both':
+        if source == 'all':
+            sources_to_use = ['google_shopping', 'google_web', 'ebay']
+        elif source == 'both':  # Legacy: google_shopping + ebay
             sources_to_use = ['google_shopping', 'ebay']
+        elif source == 'google':  # Entrambi i Google
+            sources_to_use = ['google_shopping', 'google_web']
         else:
             sources_to_use = [source]
         
@@ -98,7 +102,14 @@ class PriceCollector:
                 for item in result.get('results', []):
                     item['source'] = 'google_shopping'
                     all_items.append(item)
-                results['sources']['google'] = len(result.get('results', []))
+                results['sources']['google_shopping'] = len(result.get('results', []))
+            
+            elif src == 'google_web' and self.serpapi.is_configured():
+                result = self.serpapi.search_web(monitor.search_query, num_results=30)
+                for item in result.get('results', []):
+                    item['source'] = 'google_web'
+                    all_items.append(item)
+                results['sources']['google_web'] = len(result.get('results', []))
                 
             elif src == 'ebay' and self.ebay.is_configured():
                 result = self.ebay.search(monitor.search_query, num_results=50)
@@ -282,17 +293,25 @@ class PriceCollector:
         return valid_results
     
     def test_search(self, source, query, filter_results=True, language='it'):
-        """Test di ricerca su una o entrambe le fonti"""
+        """Test di ricerca su una o più fonti"""
         all_results = []
         total_raw = 0
         errors = {}
         
-        sources = ['google_shopping', 'ebay'] if source == 'both' else [source]
+        # Mappa source a lista di fonti
+        if source == 'all':
+            sources = ['google_shopping', 'google_web', 'ebay']
+        elif source == 'both':  # Legacy
+            sources = ['google_shopping', 'ebay']
+        elif source == 'google':
+            sources = ['google_shopping', 'google_web']
+        else:
+            sources = [source]
         
         for src in sources:
             if src == 'google_shopping':
                 if not self.serpapi.is_configured():
-                    errors['google'] = 'Non configurato'
+                    errors['google_shopping'] = 'Non configurato'
                     continue
                 result = self.serpapi.search(query, num_results=30)
                 for item in result.get('results', []):
@@ -300,7 +319,19 @@ class PriceCollector:
                     all_results.append(item)
                 total_raw += len(result.get('results', []))
                 if result.get('error'):
-                    errors['google'] = result['error']
+                    errors['google_shopping'] = result['error']
+            
+            elif src == 'google_web':
+                if not self.serpapi.is_configured():
+                    errors['google_web'] = 'Non configurato'
+                    continue
+                result = self.serpapi.search_web(query, num_results=20)
+                for item in result.get('results', []):
+                    item['source'] = 'google_web'
+                    all_results.append(item)
+                total_raw += len(result.get('results', []))
+                if result.get('error'):
+                    errors['google_web'] = result['error']
                     
             elif src == 'ebay':
                 if not self.ebay.is_configured():
@@ -316,14 +347,14 @@ class PriceCollector:
         
         if filter_results:
             valid_results = self._filter_results(all_results, query, language=language)
-            # Ordina per prezzo
             valid_results.sort(key=lambda x: x.get('price', 999999))
             return {
                 'results': valid_results,
                 'total': len(valid_results),
                 'total_raw': total_raw,
                 'filtered_out': total_raw - len(valid_results),
-                'google_count': len([r for r in valid_results if r.get('source') == 'google_shopping']),
+                'google_shopping_count': len([r for r in valid_results if r.get('source') == 'google_shopping']),
+                'google_web_count': len([r for r in valid_results if r.get('source') == 'google_web']),
                 'ebay_count': len([r for r in valid_results if r.get('source') == 'ebay']),
                 'errors': errors if errors else None,
             }

@@ -33,11 +33,13 @@
             <option value="competitive">Competitivi</option>
             <option value="expensive">Prezzo alto</option>
         </select>
-        <select class="form-select form-select-sm" id="filter-source" style="width: 140px;">
+        <select class="form-select form-select-sm" id="filter-source" style="width: 160px;">
             <option value="">Tutte le fonti</option>
-            <option value="both">Google + eBay</option>
-            <option value="google_shopping">Solo Google</option>
-            <option value="ebay">Solo eBay</option>
+            <option value="all">Tutte (3 fonti)</option>
+            <option value="google">Google (Shop+Web)</option>
+            <option value="google_shopping">Google Shopping</option>
+            <option value="google_web">Google Web</option>
+            <option value="ebay">eBay</option>
         </select>
         <select class="form-select form-select-sm" id="sort-by" style="width: 150px;">
             <option value="name">Ordina: Nome</option>
@@ -135,9 +137,11 @@
                 <div class="mb-3">
                     <label class="form-label">Fonte</label>
                     <select class="form-select" id="edit-source">
-                        <option value="both">Google + eBay</option>
-                        <option value="google_shopping">Solo Google</option>
-                        <option value="ebay">Solo eBay</option>
+                        <option value="all">Tutte (3 fonti)</option>
+                        <option value="google">Google (Shop+Web)</option>
+                        <option value="google_shopping">Google Shopping</option>
+                        <option value="google_web">Google Web</option>
+                        <option value="ebay">eBay</option>
                     </select>
                 </div>
                 <div class="mb-3">
@@ -175,9 +179,11 @@
                     <label class="form-label">Fonte</label>
                     <select class="form-select" id="bulk-source">
                         <option value="">-- Non modificare --</option>
-                        <option value="both">Google + eBay</option>
-                        <option value="google_shopping">Solo Google</option>
-                        <option value="ebay">Solo eBay</option>
+                        <option value="all">Tutte (3 fonti)</option>
+                        <option value="google">Google (Shop+Web)</option>
+                        <option value="google_shopping">Google Shopping</option>
+                        <option value="google_web">Google Web</option>
+                        <option value="ebay">eBay</option>
                     </select>
                 </div>
                 <div class="mb-3">

@@ -67,6 +67,14 @@ class SerpAPIService:
         return None
     
     def search(self, query, num_results=50):
+        """Ricerca su Google Shopping"""
+        return self._search_engine('google_shopping', query, num_results)
+    
+    def search_web(self, query, num_results=30):
+        """Ricerca su Google Web - trova prezzi da siti e-commerce"""
+        return self._search_engine('google', query, num_results)
+    
+    def _search_engine(self, engine, query, num_results):
         if not self.is_configured():
             return {'error': 'SerpAPI not configured', 'results': []}
         
@@ -76,8 +84,8 @@ class SerpAPIService:
             return {'error': 'Crediti SerpAPI esauriti! Upgrade il piano o attendi il prossimo mese.', 'results': []}
         
         params = {
-            'engine': 'google_shopping',
-            'q': query,
+            'engine': engine,
+            'q': query + ' prezzo €' if engine == 'google' else query,
             'api_key': self.api_key,
             'gl': 'it',
             'hl': 'it',
@@ -96,24 +104,11 @@ class SerpAPIService:
             SerpAPIService._last_account_check = None
             
             results = []
-            shopping_results = data.get('shopping_results', [])
             
-            for item in shopping_results[:num_results]:
-                price = self._extract_price(item)
-                if price is None:
-                    continue
-                
-                results.append({
-                    'title': item.get('title', ''),
-                    'price': price,
-                    'currency': 'EUR',
-                    'seller_name': item.get('source', ''),
-                    'seller_rating': item.get('rating'),
-                    'reviews_count': item.get('reviews'),
-                    'url': item.get('link', ''),
-                    'image_url': item.get('thumbnail', ''),
-                    'source': 'google_shopping',
-                })
+            if engine == 'google_shopping':
+                results = self._parse_shopping_results(data, num_results)
+            else:
+                results = self._parse_web_results(data, num_results)
             
             return {
                 'results': results,
@@ -126,6 +121,95 @@ class SerpAPIService:
             if '429' in error_msg:
                 error_msg = 'Rate limit SerpAPI raggiunto. Riprova tra qualche minuto.'
             return {'error': error_msg, 'results': []}
+    
+    def _parse_shopping_results(self, data, num_results):
+        """Parsing risultati Google Shopping"""
+        results = []
+        shopping_results = data.get('shopping_results', [])
+        
+        for item in shopping_results[:num_results]:
+            price = self._extract_price(item)
+            if price is None:
+                continue
+            
+            results.append({
+                'title': item.get('title', ''),
+                'price': price,
+                'currency': 'EUR',
+                'seller_name': item.get('source', ''),
+                'seller_rating': item.get('rating'),
+                'reviews_count': item.get('reviews'),
+                'url': item.get('link', ''),
+                'image_url': item.get('thumbnail', ''),
+                'source': 'google_shopping',
+            })
+        
+        return results
+    
+    def _parse_web_results(self, data, num_results):
+        """Parsing risultati Google Web - estrae prezzi dai rich snippets e titoli"""
+        import re
+        results = []
+        
+        organic_results = data.get('organic_results', [])
+        
+        for item in organic_results[:num_results]:
+            title = item.get('title', '')
+            snippet = item.get('snippet', '')
+            link = item.get('link', '')
+            
+            # Estrai prezzo da titolo, snippet o rich snippet
+            price = None
+            
+            # Check rich snippet price
+            if item.get('rich_snippet') and item['rich_snippet'].get('top', {}).get('detected_extensions', {}).get('price'):
+                price = item['rich_snippet']['top']['detected_extensions']['price']
+            
+            # Check price in snippet
+            if not price:
+                price_match = re.search(r'€\s*(\d+[.,]?\d*)', snippet)
+                if price_match:
+                    price = self._parse_price_string(price_match.group(1))
+            
+            # Check price in title
+            if not price:
+                price_match = re.search(r'€\s*(\d+[.,]?\d*)', title)
+                if price_match:
+                    price = self._parse_price_string(price_match.group(1))
+            
+            # Skip se non ha prezzo
+            if price is None or price <= 0:
+                continue
+            
+            # Estrai nome venditore dal dominio
+            domain = ''
+            if link:
+                domain_match = re.search(r'https?://(?:www\.)?([^/]+)', link)
+                if domain_match:
+                    domain = domain_match.group(1)
+            
+            results.append({
+                'title': title,
+                'price': price,
+                'currency': 'EUR',
+                'seller_name': domain,
+                'seller_rating': None,
+                'reviews_count': None,
+                'url': link,
+                'image_url': item.get('thumbnail', ''),
+                'source': 'google_web',
+            })
+        
+        return results
+    
+    def _parse_price_string(self, price_str):
+        """Converte stringa prezzo in float"""
+        try:
+            # Rimuovi punti separatori migliaia, converti virgola in punto
+            clean = price_str.replace('.', '').replace(',', '.')
+            return float(clean)
+        except:
+            return None
     
     def _extract_price(self, item):
         price_str = item.get('extracted_price')

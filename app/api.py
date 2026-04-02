@@ -351,7 +351,7 @@ def update_monitor(monitor_id):
         monitor.search_query = data['search_query'][:500]
     if 'price_tolerance' in data:
         monitor.price_tolerance = float(data['price_tolerance'])
-    if 'source' in data and data['source'] in ['both', 'google_shopping', 'ebay']:
+    if 'source' in data and data['source'] in ['all', 'both', 'google', 'google_shopping', 'google_web', 'ebay']:
         monitor.source = data['source']
     if 'language' in data:
         monitor.language = data['language']
@@ -379,7 +379,7 @@ def bulk_update_monitors():
         
         if 'price_tolerance' in updates:
             monitor.price_tolerance = float(updates['price_tolerance'])
-        if 'source' in updates and updates['source'] in ['both', 'google_shopping', 'ebay']:
+        if 'source' in updates and updates['source'] in ['all', 'both', 'google', 'google_shopping', 'google_web', 'ebay']:
             monitor.source = updates['source']
         if 'language' in updates:
             monitor.language = updates['language']
@@ -525,7 +525,7 @@ def get_monitor_prices(monitor_id):
 @api_bp.route('/test-search', methods=['POST'])
 def test_search():
     data = request.json
-    source = data.get('source', 'both')  # Default: entrambe le fonti
+    source = data.get('source', 'all')  # Default: tutte e 3 le fonti
     query = data.get('query', '')
     filter_enabled = data.get('filter', True)
     language = data.get('language', 'it')
@@ -677,7 +677,7 @@ def create_monitors_for_all():
         monitor = Monitor(
             product_id=product.id,
             search_query=product.name,
-            source='both',  # Cerca su Google + eBay
+            source='all',  # Cerca su tutte e 3 le fonti
             language=language,
             price_tolerance=price_tolerance,
             is_active=True,
