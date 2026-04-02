@@ -309,9 +309,9 @@ def get_monitor_prices(monitor_id):
     your_price = monitor.product.price if monitor.product else None
     
     # Calcola range ragionevole per escludere outlier
-    # Se il tuo prezzo è €100, accettiamo da €10 a €500 (10x range)
-    min_reasonable = your_price * 0.1 if your_price else 0.01
-    max_reasonable = your_price * 5 if your_price else 100000  # Max 5x il tuo prezzo
+    # Se il tuo prezzo è €100, accettiamo da €60 a €200 (0.6x a 2x)
+    min_reasonable = your_price * 0.6 if your_price else 0.01
+    max_reasonable = your_price * 2 if your_price else 100000
     
     # Get prices - tutti o solo validi
     query = PriceRecord.query.filter_by(monitor_id=monitor_id)
