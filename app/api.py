@@ -323,7 +323,7 @@ def create_monitor():
         product_id=product_id,
         search_query=search_query,
         source=source,
-        price_tolerance=data.get('price_tolerance', 50),
+        price_tolerance=data.get('price_tolerance', 40),
         is_active=True,
     )
     
@@ -337,7 +337,7 @@ def bulk_create_monitors():
     data = request.json
     products = data.get('products', [])
     source = data.get('source', 'google_shopping')
-    price_tolerance = data.get('price_tolerance', 50)
+    price_tolerance = data.get('price_tolerance', 40)
     
     created = 0
     skipped = 0
@@ -748,7 +748,7 @@ def create_monitors_for_all():
         data = request.get_json(silent=True) or {}
     except:
         data = {}
-    price_tolerance = data.get('price_tolerance', 50)
+    price_tolerance = data.get('price_tolerance', 40)
     language = data.get('language', 'it')
     
     # Prendi tutti i prodotti in stock dal database locale

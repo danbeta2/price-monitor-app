@@ -429,7 +429,7 @@ class PriceCollector:
         
         return matches >= required
     
-    def _filter_results(self, results, search_query, your_price=None, tolerance=50, language='it'):
+    def _filter_results(self, results, search_query, your_price=None, tolerance=40, language='it'):
         """Filtra una lista di risultati"""
         valid_results = []
         for item in results:

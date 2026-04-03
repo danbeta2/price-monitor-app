@@ -43,7 +43,7 @@ class Monitor(db.Model):
     search_query = db.Column(db.String(500), nullable=False)
     source = db.Column(db.String(50), default='both')  # 'both', 'google_shopping', 'ebay'
     language = db.Column(db.String(10), default='it')  # Lingua prodotto: 'it', 'en', 'any'
-    price_tolerance = db.Column(db.Float, default=50.0)
+    price_tolerance = db.Column(db.Float, default=40.0)
     is_active = db.Column(db.Boolean, default=True)
     last_run_at = db.Column(db.DateTime)
     created_at = db.Column(db.DateTime, default=datetime.utcnow)

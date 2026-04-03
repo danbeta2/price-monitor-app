@@ -146,37 +146,33 @@
     </div>
 </div>
 
-<!-- Recent Monitors -->
-{% if recent_monitors %}
+<!-- Price Alerts -->
 <div class="row g-3 mb-4">
-    <div class="col-12">
+    {% if price_too_high %}
+    <div class="col-lg-6">
         <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-                <span><i class="bi bi-clock-history"></i> Monitor Recenti</span>
-                <a href="/monitors" class="btn btn-sm btn-outline-primary">Vedi tutti</a>
+            <div class="card-header" style="background: rgba(239, 68, 68, 0.1); border-bottom-color: rgba(239, 68, 68, 0.2);">
+                <i class="bi bi-arrow-up-circle text-danger"></i> <strong>Prezzi troppo alti</strong>
+                <small class="text-muted ms-2">Rischi di non vendere</small>
             </div>
-            <div class="card-body">
+            <div class="card-body p-0">
                 <div class="table-responsive">
-                    <table class="table table-sm">
+                    <table class="table table-sm table-hover mb-0">
                         <thead>
                             <tr>
                                 <th>Prodotto</th>
-                                <th>Query</th>
-                                <th>Fonte</th>
-                                <th>Ultimo Run</th>
+                                <th class="text-end">Tuo</th>
+                                <th class="text-end">Media</th>
+                                <th class="text-end">Diff</th>
                             </tr>
                         </thead>
                         <tbody>
-                            {% for monitor in recent_monitors %}
-                            <tr>
-                                <td>{{ (monitor.product.name if monitor.product else 'N/A')[:40] }}...</td>
-                                <td><code>{{ monitor.search_query[:30] }}...</code></td>
-                                <td>
-                                    <span class="badge {% if monitor.source == 'google_shopping' %}bg-primary{% else %}bg-warning{% endif %}">
-                                        {{ 'Google' if monitor.source == 'google_shopping' else 'eBay' }}
-                                    </span>
-                                </td>
-                                <td>{{ monitor.last_run_at.strftime('%d/%m %H:%M') if monitor.last_run_at else 'Mai' }}</td>
+                            {% for p in price_too_high %}
+                            <tr style="cursor: pointer;" onclick="viewPrices({{ p.monitor_id }})">
+                                <td>{{ p.name }}</td>
+                                <td class="text-end">&euro;{{ '%.2f'|format(p.your_price) }}</td>
+                                <td class="text-end">&euro;{{ '%.2f'|format(p.avg_market) }}</td>
+                                <td class="text-end"><span class="badge bg-danger">+{{ p.diff_pct }}%</span></td>
                             </tr>
                             {% endfor %}
                         </tbody>
@@ -185,8 +181,42 @@
             </div>
         </div>
     </div>
+    {% endif %}
+    {% if price_too_low %}
+    <div class="col-lg-6">
+        <div class="card">
+            <div class="card-header" style="background: rgba(245, 158, 11, 0.1); border-bottom-color: rgba(245, 158, 11, 0.2);">
+                <i class="bi bi-arrow-down-circle text-warning"></i> <strong>Prezzi troppo bassi</strong>
+                <small class="text-muted ms-2">Stai regalando margine</small>
+            </div>
+            <div class="card-body p-0">
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover mb-0">
+                        <thead>
+                            <tr>
+                                <th>Prodotto</th>
+                                <th class="text-end">Tuo</th>
+                                <th class="text-end">Media</th>
+                                <th class="text-end">Diff</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {% for p in price_too_low %}
+                            <tr style="cursor: pointer;" onclick="viewPrices({{ p.monitor_id }})">
+                                <td>{{ p.name }}</td>
+                                <td class="text-end">&euro;{{ '%.2f'|format(p.your_price) }}</td>
+                                <td class="text-end">&euro;{{ '%.2f'|format(p.avg_market) }}</td>
+                                <td class="text-end"><span class="badge bg-warning text-dark">{{ p.diff_pct }}%</span></td>
+                            </tr>
+                            {% endfor %}
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+    {% endif %}
 </div>
-{% endif %}
 
 <!-- Test Search -->
 <div class="row g-3">
