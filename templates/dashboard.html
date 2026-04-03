@@ -294,7 +294,7 @@ function escapeHtml(str) {
     return div.innerHTML;
 }
 
-function loadExternalPricesDash(productName) {
+async function loadExternalPricesDash(productName) {
     const body = document.getElementById('dash-ext-body');
     if (!productName) {
         body.innerHTML = '<div class="text-center py-4 text-muted">Nome prodotto non disponibile.</div>';
@@ -303,41 +303,74 @@ function loadExternalPricesDash(productName) {
 
     const langMatch = productName.match(/\((IT|EN|JP|DE|FR|ES|KO|ZH)\)\s*$/i);
     const lang = langMatch ? langMatch[1].toUpperCase() : '';
-    const cleanName = productName.replace(/\s*\((IT|EN|JP|DE|FR|ES|KO|ZH)\)\s*$/i, '').replace(/\s*-\s*$/, '').trim();
-    const searchQuery = encodeURIComponent(cleanName);
 
     body.innerHTML = `
         <div class="alert alert-info mb-3" style="font-size: 12px;">
             <i class="bi bi-info-circle"></i>
-            <strong>Fonte esterna</strong> — I prezzi storici provengono da siti internazionali e si riferiscono
-            a <strong>prodotti in lingua inglese (EN)</strong>. I prezzi possono differire dalle versioni italiane/giapponesi.
-            ${lang && lang !== 'EN' ? `<br>Il tuo prodotto risulta in lingua <strong>${lang}</strong>.` : ''}
+            <strong>Fonte: TCGPlayer (USA)</strong> — Prezzi in USD per prodotti sealed in <strong>lingua inglese (EN)</strong>.
+            ${lang && lang !== 'EN' ? `Il tuo prodotto risulta in lingua <strong>${lang}</strong>.` : ''}
         </div>
-        <div class="mb-4"><h6>RICERCA: "${escapeHtml(cleanName)}"</h6></div>
-        <div class="row g-3 mb-4">
-            <div class="col-md-4">
-                <a href="https://www.tcgplayer.com/search/all/product?q=${searchQuery}&view=grid" target="_blank" class="btn btn-primary w-100 py-3">
-                    <i class="bi bi-box-arrow-up-right"></i><br><strong>TCGPlayer</strong><br><small>Prezzi USA + storico</small>
-                </a>
-            </div>
-            <div class="col-md-4">
-                <a href="https://www.pricecharting.com/search-products?q=${searchQuery}&type=prices" target="_blank" class="btn btn-success w-100 py-3">
-                    <i class="bi bi-graph-up"></i><br><strong>PriceCharting</strong><br><small>Grafici storici sealed</small>
-                </a>
-            </div>
-            <div class="col-md-4">
-                <a href="https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=${searchQuery}" target="_blank" class="btn btn-warning w-100 py-3">
-                    <i class="bi bi-shop"></i><br><strong>Cardmarket</strong><br><small>Prezzi EU</small>
-                </a>
-            </div>
-        </div>
-        <hr>
-        <h6>PRICECHARTING — STORICO PREZZI</h6>
-        <p class="text-muted small">Grafico embedded da PriceCharting (se disponibile):</p>
-        <iframe src="https://www.pricecharting.com/search-products?q=${searchQuery}&type=prices"
-            style="width: 100%; height: 500px; border: 2px solid var(--wb-shadow, #555);"
-            sandbox="allow-scripts allow-same-origin allow-popups" loading="lazy"></iframe>
+        <div class="text-center py-4"><span class="spinner-border"></span><p class="mt-2 text-muted">Ricerca su TCGPlayer via TCGCSV...</p></div>
     `;
+
+    try {
+        const res = await fetch('/api/tcgcsv/search?q=' + encodeURIComponent(productName));
+        const data = await res.json();
+
+        if (data.error) {
+            body.innerHTML += `<div class="alert alert-warning">${escapeHtml(data.error)}</div>`;
+            return;
+        }
+
+        let html = `
+            <div class="alert alert-info mb-3" style="font-size: 12px;">
+                <i class="bi bi-info-circle"></i>
+                <strong>Fonte: TCGPlayer (USA)</strong> — Prezzi in USD per prodotti sealed in <strong>lingua inglese (EN)</strong>.
+                ${lang && lang !== 'EN' ? `Il tuo prodotto risulta in lingua <strong>${lang}</strong>.` : ''}
+                ${data.group ? `<br>Set trovato: <strong>${escapeHtml(data.group)}</strong>` : ''}
+            </div>
+        `;
+
+        if (data.results && data.results.length > 0) {
+            html += `
+                <div class="table-responsive">
+                    <table class="table table-sm table-hover">
+                        <thead>
+                            <tr>
+                                <th></th>
+                                <th>Prodotto (EN)</th>
+                                <th class="text-end">Market</th>
+                                <th class="text-end">Low</th>
+                                <th class="text-end">Mid</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            ${data.results.map(p => `
+                                <tr>
+                                    <td style="width: 50px;">
+                                        ${p.imageUrl ? `<img src="${p.imageUrl}" style="width: 40px; height: 40px; object-fit: cover; border: 1px solid #000;">` : ''}
+                                    </td>
+                                    <td>
+                                        ${p.url ? `<a href="${p.url}" target="_blank">${escapeHtml(p.name)}</a>` : escapeHtml(p.name)}
+                                        ${p.group_name ? `<br><small class="text-muted">${escapeHtml(p.group_name)}</small>` : ''}
+                                    </td>
+                                    <td class="text-end"><strong>$${p.marketPrice?.toFixed(2) || '-'}</strong></td>
+                                    <td class="text-end">$${p.lowPrice?.toFixed(2) || '-'}</td>
+                                    <td class="text-end">$${p.midPrice?.toFixed(2) || '-'}</td>
+                                </tr>
+                            `).join('')}
+                        </tbody>
+                    </table>
+                </div>
+            `;
+        } else {
+            html += '<div class="alert alert-warning">Nessun prodotto sealed trovato su TCGPlayer per questa ricerca.</div>';
+        }
+
+        body.innerHTML = html;
+    } catch (e) {
+        body.innerHTML = `<div class="alert alert-danger">Errore nel caricamento: ${e.message}</div>`;
+    }
 }
 
 async function viewPrices(monitorId) {
