@@ -37,9 +37,27 @@ def create_app():
                         conn.commit()
                     except Exception:
                         pass  # Indice già esistente
+                # Pulisci record del proprio negozio dai competitor
+                import re
+                wc_url = app.config.get('WC_URL', '')
+                if wc_url:
+                    match = re.search(r'://(?:www\.)?([^/]+)', wc_url)
+                    if match:
+                        domain = match.group(1).lower()
+                        domain_short = domain.split('.')[0]
+                        try:
+                            result = conn.execute(text(
+                                "DELETE FROM price_records WHERE LOWER(seller_name) LIKE :d1 OR LOWER(seller_name) LIKE :d2"
+                            ), {'d1': f'%{domain}%', 'd2': f'%{domain_short}%'})
+                            conn.commit()
+                            if result.rowcount > 0:
+                                print(f"[Migration] Removed {result.rowcount} own-store records ({domain})")
+                        except Exception as e2:
+                            print(f"[Migration] Own-store cleanup warning: {e2}")
+
         except Exception as e:
             print(f"[Migration] Warning: {e}")
-    
+
     from app.routes import main_bp
     app.register_blueprint(main_bp)
     
