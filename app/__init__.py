@@ -13,6 +13,20 @@ def create_app():
     with app.app_context():
         from app import models
         db.create_all()
+        
+        # Migrazione manuale: aggiungi colonne mancanti
+        try:
+            from sqlalchemy import text
+            with db.engine.connect() as conn:
+                # Aggiungi user_feedback a price_records se non esiste
+                try:
+                    conn.execute(text("ALTER TABLE price_records ADD COLUMN user_feedback BOOLEAN"))
+                    conn.commit()
+                    print("[Migration] Added user_feedback column to price_records")
+                except Exception:
+                    pass  # Colonna già esistente
+        except Exception as e:
+            print(f"[Migration] Warning: {e}")
     
     from app.routes import main_bp
     app.register_blueprint(main_bp)
