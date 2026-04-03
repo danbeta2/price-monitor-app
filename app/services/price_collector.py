@@ -234,13 +234,43 @@ class PriceCollector:
         
         return results
     
+    # Domini del proprio negozio da escludere dai competitor
+    OWN_STORE_DOMAINS = None
+
+    @classmethod
+    def _get_own_domains(cls):
+        """Estrae i domini del proprio negozio da WC_URL (cached)"""
+        if cls.OWN_STORE_DOMAINS is None:
+            from flask import current_app
+            wc_url = current_app.config.get('WC_URL', '')
+            domains = set()
+            if wc_url:
+                # Estrai dominio da URL (es. "https://scimmia.it" -> "scimmia.it", "scimmia")
+                import re
+                match = re.search(r'://(?:www\.)?([^/]+)', wc_url)
+                if match:
+                    full_domain = match.group(1).lower()
+                    domains.add(full_domain)                    # es. "scimmia.it"
+                    domains.add(full_domain.split('.')[0])       # es. "scimmia"
+            cls.OWN_STORE_DOMAINS = domains
+        return cls.OWN_STORE_DOMAINS
+
     def _validate_result(self, item, your_price, tolerance, search_query, language='it'):
         """Valida un risultato con logica intelligente per TCG sealed products"""
         title = item.get('title', '')
         title_lower = title.lower()
         query_lower = search_query.lower()
         price = item.get('price', 0)
-        
+
+        # ========== 0. ESCLUDI IL PROPRIO NEGOZIO ==========
+        own_domains = self._get_own_domains()
+        if own_domains:
+            seller = (item.get('seller_name') or '').lower()
+            url = (item.get('url') or '').lower()
+            for domain in own_domains:
+                if domain in seller or domain in url:
+                    return False
+
         # ========== 1. FILTRO PREZZO (usa tolerance del monitor) ==========
         # tolerance e la percentuale configurata dall'utente (default 50%)
         tolerance_pct = tolerance if tolerance and tolerance > 0 else 50
