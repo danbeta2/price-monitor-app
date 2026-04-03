@@ -90,7 +90,7 @@ class EbayService:
         params = {
             'q': query,
             'limit': min(num_results, 200),
-            'filter': 'conditionIds:{1000|1500},deliveryCountry:IT',
+            'filter': 'conditionIds:{1000|1500}',  # Solo nuovi, senza filtro paese
         }
         
         try:

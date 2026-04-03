@@ -237,11 +237,12 @@ class PriceCollector:
         query_lower = search_query.lower()
         price = item.get('price', 0)
         
-        # ========== 1. FILTRO PREZZO STRETTO (±20%) ==========
-        # Un prodotto sealed ha un prezzo di mercato relativamente stabile
+        # ========== 1. FILTRO PREZZO (±35%) ==========
+        # Range più ampio per catturare offerte e variazioni di mercato
+        # Gemini farà il filtro fine sui prodotti che passano
         if your_price and your_price > 0:
-            min_price = your_price * 0.80  # Non meno dell'80%
-            max_price = your_price * 1.20  # Non più del 120%
+            min_price = your_price * 0.65  # Non meno del 65%
+            max_price = your_price * 1.35  # Non più del 135%
             if not (min_price <= price <= max_price):
                 return False
         
