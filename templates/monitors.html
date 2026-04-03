@@ -776,9 +776,7 @@ function renderPriceModal(data) {
                                 <tr class="${rowClass}" data-valid="${p.is_valid}" data-record-id="${p.id}">
                                     <td>${feedbackBtns}</td>
                                     <td>
-                                        <a href="${p.url}" target="_blank" class="text-decoration-none" title="${escapeHtml(p.title)}">
-                                            ${escapeHtml(p.title)}
-                                        </a>
+                                        ${p.url ? `<a href="${p.url}" target="_blank" class="text-decoration-none" title="${escapeHtml(p.title)}">${escapeHtml(p.title)}</a>` : escapeHtml(p.title)}
                                     </td>
                                     <td><strong>€${p.price.toFixed(2)}</strong></td>
                                     <td class="${diffClass}">${diff !== null ? `${diff > 0 ? '+' : ''}€${diff.toFixed(2)}` : '-'}</td>
