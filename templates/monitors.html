@@ -441,12 +441,12 @@ function renderMonitors() {
                              class="me-2" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;"
                              onerror="this.src='/static/img/placeholder.png'">
                         <div>
-                            <div class="fw-semibold text-truncate" style="max-width: 200px;" title="${escapeHtml(product.name || '')}">${escapeHtml((product.name || '').substring(0, 35))}${(product.name || '').length > 35 ? '...' : ''}</div>
+                            <div class="fw-semibold" title="${escapeHtml(product.name || '')}">${escapeHtml(product.name || '')}</div>
                             <small class="text-muted">${product.sku || ''}</small>
                         </div>
                     </div>
                 </td>
-                <td><code class="small text-truncate d-block" style="max-width: 150px;" title="${escapeHtml(m.search_query)}">${escapeHtml(m.search_query.substring(0, 25))}${m.search_query.length > 25 ? '...' : ''}</code></td>
+                <td><code class="small">${escapeHtml(m.search_query)}</code></td>
                 <td>${sourceBadge}</td>
                 <td><strong>€${(product.price || 0).toFixed(2)}</strong></td>
                 <td class="${priceClass}">
