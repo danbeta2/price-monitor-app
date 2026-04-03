@@ -66,6 +66,86 @@ class GeminiService:
         GeminiService._requests_today += 1
         GeminiService._total_requests += 1
     
+    def generate_search_query(self, product_name, product_price=None):
+        """
+        Genera una query di ricerca ottimizzata per trovare il prodotto corretto.
+        Usa Gemini per capire il tipo di prodotto e creare una query precisa.
+        """
+        if not self.is_configured():
+            return product_name, "Gemini non configurato"
+        
+        if not self.can_make_request():
+            return product_name, "Limite giornaliero raggiunto"
+        
+        price_hint = f"\nPrezzo: €{product_price:.2f}" if product_price else ""
+        
+        prompt = f"""Sei un esperto di prodotti TCG (Pokémon, Magic, Yu-Gi-Oh, Lorcana, One Piece).
+
+COMPITO: Genera una QUERY DI RICERCA ottimizzata per Google Shopping/eBay per trovare ESATTAMENTE questo prodotto.
+
+NOME PRODOTTO: {product_name}{price_hint}
+
+REGOLE:
+1. Identifica il TIPO di prodotto (Display/Box, Bundle, ETB, Tin, Blister, Collection, Booster Pack)
+2. Identifica l'ESPANSIONE/SET (es. "Scarlatto e Violetto", "151", "Fiamme Ossidiana")
+3. Identifica eventuali VARIANTI (es. "Charizard", "Pikachu", "Mid Autumn")
+4. Includi il NUMERO DI BUSTE se rilevante (36, 24, 6, 3)
+5. Specifica la LINGUA se indicata (ITA, ENG, JAP)
+6. RIMUOVI parole inutili come "TCG", "Trading Card Game", "(CHN)", codici interni
+
+FORMATO RISPOSTA:
+QUERY: [la query ottimizzata]
+TIPO: [tipo prodotto]
+NOTE: [breve spiegazione]
+
+Esempio:
+Input: "151 Charizard Travel Gift Box – Set da Viaggio (CHN)"
+Output:
+QUERY: Pokemon 151 Charizard Gift Box Set Viaggio
+TIPO: Gift Box
+NOTE: Gift Box speciale 151 con Charizard"""
+
+        try:
+            response = requests.post(
+                f"{self.API_URL}?key={self.api_key}",
+                headers={'Content-Type': 'application/json'},
+                json={
+                    "contents": [{"parts": [{"text": prompt}]}],
+                    "generationConfig": {
+                        "temperature": 0.2,
+                        "maxOutputTokens": 150
+                    }
+                },
+                timeout=15
+            )
+            
+            if response.status_code != 200:
+                print(f"[Gemini] Query generation error: {response.status_code}")
+                return product_name, f"Errore API: {response.status_code}"
+            
+            self._increment_counter()
+            
+            data = response.json()
+            result_text = data.get('candidates', [{}])[0].get('content', {}).get('parts', [{}])[0].get('text', '').strip()
+            
+            # Estrai la query dalla risposta
+            query = product_name  # default
+            product_type = "unknown"
+            
+            for line in result_text.split('\n'):
+                line = line.strip()
+                if line.startswith('QUERY:'):
+                    query = line.replace('QUERY:', '').strip()
+                elif line.startswith('TIPO:'):
+                    product_type = line.replace('TIPO:', '').strip()
+            
+            print(f"[Gemini] Generated query: '{query}' (type: {product_type})")
+            return query, product_type
+            
+        except Exception as e:
+            print(f"[Gemini] Query generation error: {e}")
+            return product_name, f"Errore: {str(e)[:50]}"
+    
     def _get_feedback_examples(self, search_query, limit=6):
         """Recupera esempi di feedback per few-shot learning"""
         try:

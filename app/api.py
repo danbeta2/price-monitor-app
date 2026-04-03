@@ -412,6 +412,41 @@ def update_monitor(monitor_id):
     db.session.commit()
     return jsonify({'message': 'Monitor updated', 'monitor': monitor.to_dict()})
 
+@api_bp.route('/monitors/<int:monitor_id>/regenerate-query', methods=['POST'])
+def regenerate_monitor_query(monitor_id):
+    """Rigenera la query di ricerca usando Gemini AI"""
+    from app.services.gemini import GeminiService
+    
+    monitor = Monitor.query.get_or_404(monitor_id)
+    
+    if not monitor.product:
+        return jsonify({'error': 'Monitor senza prodotto associato'}), 400
+    
+    gemini = GeminiService()
+    
+    if not gemini.is_configured():
+        return jsonify({'error': 'Gemini non configurato'}), 400
+    
+    if not gemini.can_make_request():
+        return jsonify({'error': 'Limite giornaliero Gemini raggiunto'}), 429
+    
+    old_query = monitor.search_query
+    new_query, product_type = gemini.generate_search_query(
+        monitor.product.name, 
+        monitor.product.price
+    )
+    
+    monitor.search_query = new_query
+    db.session.commit()
+    
+    return jsonify({
+        'message': 'Query rigenerata con AI',
+        'old_query': old_query,
+        'new_query': new_query,
+        'product_type': product_type,
+        'monitor': monitor.to_dict()
+    })
+
 @api_bp.route('/monitors/bulk-update', methods=['POST'])
 def bulk_update_monitors():
     """Aggiorna più monitor in batch"""
@@ -441,6 +476,55 @@ def bulk_update_monitors():
     
     db.session.commit()
     return jsonify({'updated': updated, 'message': f'{updated} monitor aggiornati'})
+
+@api_bp.route('/monitors/regenerate-queries', methods=['POST'])
+def regenerate_all_queries():
+    """Rigenera le query di tutti i monitor selezionati usando Gemini AI"""
+    from app.services.gemini import GeminiService
+    
+    data = request.get_json(silent=True) or {}
+    monitor_ids = data.get('monitor_ids', [])
+    
+    if not monitor_ids:
+        return jsonify({'error': 'No monitor IDs provided'}), 400
+    
+    gemini = GeminiService()
+    
+    if not gemini.is_configured():
+        return jsonify({'error': 'Gemini non configurato'}), 400
+    
+    regenerated = 0
+    skipped = 0
+    
+    for monitor_id in monitor_ids:
+        if not gemini.can_make_request():
+            skipped += (len(monitor_ids) - regenerated - skipped)
+            break
+        
+        monitor = Monitor.query.get(monitor_id)
+        if not monitor or not monitor.product:
+            skipped += 1
+            continue
+        
+        new_query, product_type = gemini.generate_search_query(
+            monitor.product.name, 
+            monitor.product.price
+        )
+        
+        monitor.search_query = new_query
+        regenerated += 1
+        
+        # Commit ogni 5 per evitare timeout
+        if regenerated % 5 == 0:
+            db.session.commit()
+    
+    db.session.commit()
+    
+    return jsonify({
+        'regenerated': regenerated,
+        'skipped': skipped,
+        'message': f'{regenerated} query rigenerate con AI'
+    })
 
 @api_bp.route('/monitors/<int:monitor_id>/collect', methods=['POST'])
 def collect_prices(monitor_id):
@@ -744,12 +828,15 @@ def cleanup_single_cards():
 @api_bp.route('/monitors/create-all', methods=['POST'])
 def create_monitors_for_all():
     """Crea UN monitor per ogni prodotto SEALED disponibile (esclude carte singole)"""
+    from app.services.gemini import GeminiService
+    
     try:
         data = request.get_json(silent=True) or {}
     except:
         data = {}
     price_tolerance = data.get('price_tolerance', 50)
     language = data.get('language', 'it')
+    use_ai_query = data.get('use_ai_query', True)  # Usa Gemini per generare query
     
     # Prendi tutti i prodotti in stock dal database locale
     products = Product.query.filter_by(stock_status='instock').all()
@@ -761,9 +848,12 @@ def create_monitors_for_all():
             'created': 0
         })
     
+    gemini = GeminiService()
+    
     created = 0
     skipped = 0
     skipped_single_cards = 0
+    ai_queries = 0
     
     for product in products:
         # ESCLUDI carte singole per risparmiare API
@@ -777,10 +867,17 @@ def create_monitors_for_all():
             skipped += 1
             continue
         
+        # Genera query ottimizzata con Gemini (se abilitato)
+        if use_ai_query and gemini.is_configured() and gemini.can_make_request():
+            search_query, product_type = gemini.generate_search_query(product.name, product.price)
+            ai_queries += 1
+        else:
+            search_query = product.name
+        
         # Crea UN monitor che cerca su ENTRAMBE le fonti
         monitor = Monitor(
             product_id=product.id,
-            search_query=product.name,
+            search_query=search_query,
             source='all',  # Cerca su tutte e 3 le fonti
             language=language,
             price_tolerance=price_tolerance,
@@ -788,6 +885,10 @@ def create_monitors_for_all():
         )
         db.session.add(monitor)
         created += 1
+        
+        # Commit ogni 10 per evitare timeout
+        if created % 10 == 0:
+            db.session.commit()
     
     db.session.commit()
     
@@ -795,6 +896,7 @@ def create_monitors_for_all():
         'created': created,
         'skipped': skipped,
         'skipped_single_cards': skipped_single_cards,
+        'ai_queries_generated': ai_queries,
         'total_products': len(products),
-        'message': f'Creati {created} monitor sealed (escluse {skipped_single_cards} carte singole)'
+        'message': f'Creati {created} monitor (query AI: {ai_queries})'
     })
