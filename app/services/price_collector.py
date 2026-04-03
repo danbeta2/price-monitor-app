@@ -258,26 +258,48 @@ class PriceCollector:
             'repack', 'repacked', 'resealed', 'riconfezionato',
             # Gradate
             'psa ', 'bgs ', 'cgc ', 'graded', 'gradato', 'gem mint',
-            # Accessori
-            'sleeves', 'bustine protettive', 'deck box', 'playmat', 'tappetino', 'binder',
+            # Accessori - prodotti
+            'sleeves', 'bustine protettive', 'deck box', 'playmat', 'tappetino',
+            'binder', 'album foto', 'portfolio', 'raccoglitore',
+            'toploader', 'top loader', 'card saver', 'one touch',
+            'inner sleeve', 'penny sleeve', 'bustina protettiva',
+            # Accessori - brand (non producono carte/sealed)
+            'ultra pro', 'ultimate guard', 'dragon shield', 'gamegenic',
+            'arkhive', 'xenoskin', 'alcove', 'vault x', 'bcw ',
+            'sideloading', 'matte sleeve',
             # Carte singole
             'singola', 'singolo', 'single card', 'holo rare', 'full art', 'secret rare',
+            # Carte singole - pattern prezzo basso
+            'common', 'uncommon', 'rare holo', 'reverse holo',
         ]
         for keyword in critical_negatives:
             if keyword in title_lower:
                 return False
         
-        # ========== 3. MATCH TIPO PRODOTTO (critico!) ==========
+        # ========== 3. FILTRO PRODOTTI NON-TCG ==========
+        # Se il titolo non contiene NESSUN termine TCG, probabilmente è un accessorio
+        tcg_indicators = [
+            'pokemon', 'pokémon', 'magic', 'mtg', 'yugioh', 'yu-gi-oh',
+            'lorcana', 'one piece', 'digimon', 'dragon ball',
+            'booster', 'display', 'bundle', 'etb', 'blister', 'tin ',
+            'buste', 'busta', 'espansione', 'expansion',
+            'scarlet', 'violet', 'scarlatto', 'violetto',
+        ]
+        has_tcg_term = any(term in title_lower for term in tcg_indicators)
+        if not has_tcg_term:
+            return False
+
+        # ========== 4. MATCH TIPO PRODOTTO (critico!) ==========
         # Se cerco "Display 36" non voglio "Bundle 6" o "Blister 3"
         if not self._match_product_type_strict(query_lower, title_lower):
             return False
         
-        # ========== 4. MATCH ESPANSIONE/SET ==========
+        # ========== 5. MATCH ESPANSIONE/SET ==========
         # Le parole chiave dell'espansione devono corrispondere
         if not self._match_expansion(query_lower, title_lower):
             return False
-        
-        # ========== 5. LINGUA ==========
+
+        # ========== 6. LINGUA ==========
         if language == 'it':
             foreign_keywords = ['japanese', 'giapponese', 'japan', 'korean', 'coreano', 
                                'chinese', 'cinese', 'china', 'german', 'tedesco']
@@ -294,11 +316,14 @@ class PriceCollector:
         product_categories = {
             'display': ['display', 'box 36', '36 buste', '36 booster', 'booster box'],
             'bundle': ['bundle', '6 buste', '6 booster'],
-            'etb': ['etb', 'elite trainer', 'trainer box'],
+            'etb': ['etb', 'elite trainer', 'trainer box', 'set allenatore'],
             'tin': ['tin ', ' tin', 'latta'],
-            'blister': ['blister', '3 buste', '3 booster', 'checklane'],
+            'blister': ['blister', '3 buste', '3 booster', '2 buste', '2 booster', '1 busta', '1 booster', 'checklane'],
             'collection': ['collection box', 'collezione premium', 'premium collection'],
             'gift': ['gift set', 'gift box', 'set regalo'],
+            'upc': ['upc', 'ultra premium collection', 'ultra premium'],
+            'case': ['case 6', 'case 10', 'case 12', ' case ', 'cassa'],
+            'booster_single': ['busta singola', 'bustina ', 'singola busta', 'single pack'],
         }
         
         # Trova la categoria del prodotto cercato
@@ -340,27 +365,38 @@ class PriceCollector:
     
     def _match_expansion(self, query, title):
         """Verifica che l'espansione/set corrisponda"""
-        
-        # Estrai parole significative dalla query (escludi parole comuni)
+
+        # Parole comuni da ignorare nel matching
         common_words = {
             'pokemon', 'pokémon', 'tcg', 'card', 'cards', 'carte', 'box', 'display',
-            'booster', 'bundle', 'pack', 'buste', 'set', 'collection', 'collezione',
+            'booster', 'bundle', 'pack', 'buste', 'busta', 'set', 'collection', 'collezione',
             'ita', 'ital', 'italiano', 'italiana', 'eng', 'english', 'inglese',
             'sealed', 'sigillato', 'new', 'nuovo', 'nuova', 'the', 'a', 'di', 'del',
             'della', 'e', 'and', 'or', 'with', 'con', 'per', 'for', 'in', 'da',
+            'promo', 'carta', 'con', 'ultra', 'premium', 'mega', 'ex', 'gx', 'vmax',
+            'vstar', 'tin', 'latta', 'elite', 'trainer', 'allenatore',
+            'magic', 'mtg', 'gathering', 'yugioh', 'lorcana',
         }
-        
+
+        # Parole che indicano tipo prodotto (non espansione)
+        type_words = {
+            'display', 'box', 'booster', 'bundle', 'pack', 'buste', 'busta',
+            'blister', 'tin', 'latta', 'etb', 'elite', 'trainer', 'collection',
+            'collezione', 'upc', 'case', 'gift', 'starter', 'deck', 'theme',
+            'structure', 'checklane', 'allenatore', 'fuoriclasse',
+        }
+
         # Estrai parole significative dalla query
         query_words = set(re.findall(r'[a-zA-ZàèéìòùÀÈÉÌÒÙ]{3,}', query))
-        significant_query_words = [w for w in query_words if w not in common_words]
-        
+        significant_query_words = [w for w in query_words if w not in common_words and w not in type_words]
+
         if not significant_query_words:
             return True
-        
-        # Almeno il 60% delle parole significative deve essere nel titolo
+
+        # Almeno il 75% delle parole significative deve essere nel titolo
         matches = sum(1 for w in significant_query_words if w in title)
-        required = max(1, int(len(significant_query_words) * 0.6))
-        
+        required = max(1, int(len(significant_query_words) * 0.75))
+
         return matches >= required
     
     def _match_product_type(self, search_query, title):

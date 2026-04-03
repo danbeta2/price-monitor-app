@@ -306,16 +306,28 @@ PRODOTTO CERCATO: {searched_product}{price_context}
 PRODOTTI DA VERIFICARE:
 {products_list}
 
-CRITERI: Un prodotto è VALIDO solo se:
-- STESSO tipo (Display 36 ≠ Bundle 6 ≠ ETB ≠ Tin ≠ Blister)
-- STESSO numero buste
-- STESSA espansione
-- STESSO personaggio (se specificato)
+CRITERI STRETTI - Un prodotto è VALIDO SOLO se soddisfa TUTTI questi criteri:
 
-NON_VALIDO se: carta singola, busta singola, lotto, usato, espansione diversa, tipo diverso.
+1. STESSO TIPO PRODOTTO ESATTO:
+   - Display/Box 36 buste ≠ Bundle 6 buste ≠ ETB ≠ Tin ≠ Blister ≠ Collection ≠ UPC
+   - Il numero di buste DEVE corrispondere esattamente
+
+2. STESSA ESPANSIONE/SET:
+   - "Ascesa Eroica" ≠ "Fiamme Ossidiana" ≠ "Scarlatto e Violetto" ≠ "151"
+   - Anche nomi tradotti (es. "Chilling Reign" = "Regno Glaciale") sono la STESSA espansione
+
+3. STESSO PERSONAGGIO/VARIANTE (se specificato nel prodotto cercato):
+   - Se cerca "Charizard", DEVE contenere Charizard
+
+NON_VALIDO AUTOMATICO se il prodotto trovato è:
+- Carta singola, busta singola, lotto, usato, aperto
+- Accessorio (sleeves, deck box, album, binder, playmat, toploader)
+- Brand accessori (Ultra Pro, Ultimate Guard, Dragon Shield, Gamegenic)
+- Espansione/set DIVERSO da quello cercato
+- Tipo prodotto diverso (es. cerca Display, trova Bundle)
 {feedback_examples}
 
-Rispondi con UNA RIGA per prodotto:
+Rispondi con UNA RIGA per prodotto, NIENT'ALTRO:
 1:VALIDO oppure 1:NON_VALIDO
 2:VALIDO oppure 2:NON_VALIDO
 ..."""
