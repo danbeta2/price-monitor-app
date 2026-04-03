@@ -676,6 +676,38 @@ body {
 .badge.bg-danger { background: var(--danger-color) !important; }
 .badge.bg-secondary { background: var(--wb-dark-gray) !important; }
 
+/* ---- Nav Tabs (Amiga style) ---- */
+.nav-tabs {
+    border-bottom: 2px solid var(--wb-black);
+}
+
+.nav-tabs .nav-link {
+    border-radius: 0;
+    border: 2px solid;
+    border-color: var(--wb-highlight) var(--wb-shadow) var(--wb-shadow) var(--wb-highlight);
+    color: var(--wb-black);
+    background: var(--wb-bg);
+    font-family: inherit;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    padding: 4px 12px;
+    margin-bottom: -2px;
+}
+
+.nav-tabs .nav-link:hover {
+    background: var(--wb-light-gray);
+    color: var(--wb-black);
+    border-color: var(--wb-highlight) var(--wb-shadow) var(--wb-shadow) var(--wb-highlight);
+}
+
+.nav-tabs .nav-link.active {
+    background: var(--wb-blue);
+    color: var(--wb-white);
+    border-color: var(--wb-blue-light) var(--wb-black) var(--wb-blue) var(--wb-blue-light);
+}
+
 /* ---- Buttons (Amiga Gadgets) ---- */
 .btn {
     border-radius: 0;
