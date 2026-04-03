@@ -251,15 +251,32 @@
 
 <!-- Price Modal -->
 <div class="modal fade" id="priceModal" tabindex="-1">
-    <div class="modal-dialog modal-lg">
+    <div class="modal-dialog modal-xl">
         <div class="modal-content">
             <div class="modal-header">
                 <h5 class="modal-title">Dettagli Prezzi</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="priceModalBody">
-                <div class="text-center py-4">
-                    <span class="spinner-border"></span>
+            <div class="modal-body">
+                <ul class="nav nav-tabs mb-3" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="dash-tab-data" data-bs-toggle="tab" data-bs-target="#dash-panel-data" type="button" role="tab">I Tuoi Dati</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="dash-tab-ext" data-bs-toggle="tab" data-bs-target="#dash-panel-ext" type="button" role="tab">Storico Mercato (EN)</button>
+                    </li>
+                </ul>
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="dash-panel-data" role="tabpanel">
+                        <div id="priceModalBody">
+                            <div class="text-center py-4"><span class="spinner-border"></span></div>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="dash-panel-ext" role="tabpanel">
+                        <div id="dash-ext-body">
+                            <div class="text-center py-4 text-muted">Clicca per caricare lo storico esterno.</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -269,153 +286,145 @@
 
 {% block scripts %}
 <script>
+let dashCurrentProductName = '';
+
+function escapeHtml(str) {
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+}
+
+function loadExternalPricesDash(productName) {
+    const body = document.getElementById('dash-ext-body');
+    if (!productName) {
+        body.innerHTML = '<div class="text-center py-4 text-muted">Nome prodotto non disponibile.</div>';
+        return;
+    }
+
+    const langMatch = productName.match(/\((IT|EN|JP|DE|FR|ES|KO|ZH)\)\s*$/i);
+    const lang = langMatch ? langMatch[1].toUpperCase() : '';
+    const cleanName = productName.replace(/\s*\((IT|EN|JP|DE|FR|ES|KO|ZH)\)\s*$/i, '').replace(/\s*-\s*$/, '').trim();
+    const searchQuery = encodeURIComponent(cleanName);
+
+    body.innerHTML = `
+        <div class="alert alert-info mb-3" style="font-size: 12px;">
+            <i class="bi bi-info-circle"></i>
+            <strong>Fonte esterna</strong> — I prezzi storici provengono da siti internazionali e si riferiscono
+            a <strong>prodotti in lingua inglese (EN)</strong>. I prezzi possono differire dalle versioni italiane/giapponesi.
+            ${lang && lang !== 'EN' ? `<br>Il tuo prodotto risulta in lingua <strong>${lang}</strong>.` : ''}
+        </div>
+        <div class="mb-4"><h6>RICERCA: "${escapeHtml(cleanName)}"</h6></div>
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <a href="https://www.tcgplayer.com/search/all/product?q=${searchQuery}&view=grid" target="_blank" class="btn btn-primary w-100 py-3">
+                    <i class="bi bi-box-arrow-up-right"></i><br><strong>TCGPlayer</strong><br><small>Prezzi USA + storico</small>
+                </a>
+            </div>
+            <div class="col-md-4">
+                <a href="https://www.pricecharting.com/search-products?q=${searchQuery}&type=prices" target="_blank" class="btn btn-success w-100 py-3">
+                    <i class="bi bi-graph-up"></i><br><strong>PriceCharting</strong><br><small>Grafici storici sealed</small>
+                </a>
+            </div>
+            <div class="col-md-4">
+                <a href="https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=${searchQuery}" target="_blank" class="btn btn-warning w-100 py-3">
+                    <i class="bi bi-shop"></i><br><strong>Cardmarket</strong><br><small>Prezzi EU</small>
+                </a>
+            </div>
+        </div>
+        <hr>
+        <h6>PRICECHARTING — STORICO PREZZI</h6>
+        <p class="text-muted small">Grafico embedded da PriceCharting (se disponibile):</p>
+        <iframe src="https://www.pricecharting.com/search-products?q=${searchQuery}&type=prices"
+            style="width: 100%; height: 500px; border: 2px solid var(--wb-shadow, #555);"
+            sandbox="allow-scripts allow-same-origin allow-popups" loading="lazy"></iframe>
+    `;
+}
+
 async function viewPrices(monitorId) {
     const modal = new bootstrap.Modal(document.getElementById('priceModal'));
     const body = document.getElementById('priceModalBody');
-    
+    const extBody = document.getElementById('dash-ext-body');
+
+    document.getElementById('dash-tab-data').click();
     body.innerHTML = '<div class="text-center py-4"><span class="spinner-border"></span></div>';
+    extBody.innerHTML = '<div class="text-center py-4 text-muted">Clicca per caricare lo storico esterno.</div>';
+    extBody.dataset.loaded = 'false';
     modal.show();
-    
+
     try {
         const res = await fetch(`/api/monitors/${monitorId}/prices`);
         const data = await res.json();
-        
+        dashCurrentProductName = data.product_name || '';
+
+        // Setup external tab lazy load
+        document.getElementById('dash-tab-ext').onclick = function() {
+            if (extBody.dataset.loaded !== 'true') {
+                loadExternalPricesDash(dashCurrentProductName);
+                extBody.dataset.loaded = 'true';
+            }
+        };
+
         let html = `
             <div class="mb-3">
-                <h6>${data.product_name}</h6>
-                <small class="text-muted">Query: ${data.search_query}</small>
+                <h6>${escapeHtml(data.product_name)}</h6>
+                <small class="text-muted">Query: ${escapeHtml(data.search_query)}</small>
             </div>
         `;
-        
-        if (data.stats.total > 0) {
+
+        if (data.stats && data.stats.total > 0) {
             html += `
                 <div class="row g-3 mb-4">
-                    <div class="col-4">
-                        <div class="price-box">
-                            <div class="label">Tuo Prezzo</div>
-                            <div class="value your-price">€${data.your_price?.toFixed(2) || '-'}</div>
-                        </div>
-                    </div>
-                    <div class="col-4">
-                        <div class="price-box">
-                            <div class="label">Min Competitor</div>
-                            <div class="value best-price">€${data.stats.min_price?.toFixed(2) || '-'}</div>
-                        </div>
-                    </div>
-                    <div class="col-4">
-                        <div class="price-box">
-                            <div class="label">Media</div>
-                            <div class="value">€${data.stats.avg_price?.toFixed(2) || '-'}</div>
-                        </div>
-                    </div>
+                    <div class="col-4"><div class="price-box"><div class="label">Tuo Prezzo</div><div class="value your-price">&euro;${data.your_price?.toFixed(2) || '-'}</div></div></div>
+                    <div class="col-4"><div class="price-box"><div class="label">Min Competitor</div><div class="value best-price">&euro;${data.stats.min_price?.toFixed(2) || '-'}</div></div></div>
+                    <div class="col-4"><div class="price-box"><div class="label">Media</div><div class="value">&euro;${data.stats.avg_price?.toFixed(2) || '-'}</div></div></div>
                 </div>
             `;
-            
-            if (data.history.length > 0) {
+            if (data.history && data.history.length > 0) {
                 html += `<canvas id="priceChart" height="150"></canvas>`;
             }
-            
             html += `
                 <h6 class="mt-4 mb-3">Ultimi prezzi validi (${data.prices.length})</h6>
                 <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
                     <table class="table table-sm">
-                        <thead>
-                            <tr>
-                                <th>Titolo</th>
-                                <th>Prezzo</th>
-                                <th>vs Tuo</th>
-                                <th>Venditore</th>
-                            </tr>
-                        </thead>
+                        <thead><tr><th>Titolo</th><th>Prezzo</th><th>vs Tuo</th><th>Venditore</th></tr></thead>
                         <tbody>
                             ${data.prices.map(p => {
                                 const diff = data.your_price ? ((p.price - data.your_price) / data.your_price * 100).toFixed(1) : null;
                                 const diffClass = diff < 0 ? 'lower' : 'higher';
-                                return `
-                                    <tr>
-                                        <td><a href="${p.url}" target="_blank">${p.title.substring(0, 40)}...</a></td>
-                                        <td><strong>€${p.price.toFixed(2)}</strong></td>
-                                        <td>${diff !== null ? `<span class="price-diff ${diffClass}">${diff > 0 ? '+' : ''}${diff}%</span>` : '-'}</td>
-                                        <td>${p.seller_name || '-'}</td>
-                                    </tr>
-                                `;
+                                return `<tr>
+                                    <td>${p.url ? `<a href="${p.url}" target="_blank">${escapeHtml(p.title)}</a>` : escapeHtml(p.title)}</td>
+                                    <td><strong>&euro;${p.price.toFixed(2)}</strong></td>
+                                    <td>${diff !== null ? `<span class="price-diff ${diffClass}">${diff > 0 ? '+' : ''}${diff}%</span>` : '-'}</td>
+                                    <td>${escapeHtml(p.seller_name || '-')}</td>
+                                </tr>`;
                             }).join('')}
                         </tbody>
                     </table>
                 </div>
             `;
         } else {
-            html += '<div class="alert alert-info">Nessun prezzo rilevato per questo monitor. Clicca "Aggiorna" per raccogliere i prezzi.</div>';
+            html += '<div class="alert alert-info">Nessun prezzo rilevato.</div>';
         }
-        
+
         body.innerHTML = html;
-        
-        // Render chart if data available
-        if (data.history.length > 0) {
-            const ctx = document.getElementById('priceChart').getContext('2d');
-            new Chart(ctx, {
+
+        if (data.history && data.history.length > 0) {
+            new Chart(document.getElementById('priceChart').getContext('2d'), {
                 type: 'line',
                 data: {
                     labels: data.history.map(h => h.date),
                     datasets: [
-                        {
-                            label: 'Min',
-                            data: data.history.map(h => h.min_price),
-                            borderColor: '#10b981',
-                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                            fill: true,
-                            tension: 0.3
-                        },
-                        {
-                            label: 'Media',
-                            data: data.history.map(h => h.avg_price),
-                            borderColor: '#f59e0b',
-                            borderDash: [5, 5],
-                            fill: false,
-                            tension: 0.3
-                        },
-                        {
-                            label: 'Tuo Prezzo',
-                            data: data.history.map(() => data.your_price),
-                            borderColor: '#4f46e5',
-                            borderWidth: 2,
-                            borderDash: [10, 5],
-                            fill: false,
-                            pointRadius: 0
-                        }
+                        { label: 'Min', data: data.history.map(h => h.min_price), borderColor: '#198754', fill: false, tension: 0.3 },
+                        { label: 'Media', data: data.history.map(h => h.avg_price), borderColor: '#0d6efd', backgroundColor: 'rgba(13,110,253,0.1)', fill: true, tension: 0.3 },
+                        { label: 'Max', data: data.history.map(h => h.max_price), borderColor: '#dc3545', fill: false, tension: 0.3 },
+                        { label: 'Tuo', data: data.history.map(() => data.your_price), borderColor: '#ff9500', borderWidth: 2, borderDash: [5,5], fill: false, pointRadius: 0 }
                     ]
                 },
-                options: {
-                    responsive: true,
-                    plugins: {
-                        legend: { position: 'bottom' }
-                    },
-                    scales: {
-                        y: {
-                            beginAtZero: false
-                        }
-                    }
-                }
+                options: { responsive: true, plugins: { legend: { position: 'bottom' } }, scales: { y: { beginAtZero: false } } }
             });
         }
     } catch (e) {
         body.innerHTML = `<div class="alert alert-danger">Errore: ${e.message}</div>`;
-    }
-}
-
-async function collectPrices(monitorId) {
-    try {
-        const res = await fetch(`/api/monitors/${monitorId}/collect`, { method: 'POST' });
-        const data = await res.json();
-        
-        if (data.error) {
-            alert('Errore: ' + data.error);
-        } else {
-            alert(`Raccolti ${data.saved} prezzi (${data.valid} validi)`);
-            location.reload();
-        }
-    } catch (e) {
-        alert('Errore: ' + e.message);
     }
 }
 </script>

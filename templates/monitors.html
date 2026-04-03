@@ -129,9 +129,26 @@
                 <h5 class="modal-title">Dettagli Prezzi</h5>
                 <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
             </div>
-            <div class="modal-body" id="price-modal-body">
-                <div class="text-center py-5">
-                    <span class="spinner-border"></span>
+            <div class="modal-body">
+                <ul class="nav nav-tabs mb-3" id="priceTabs" role="tablist">
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link active" id="tab-our-data" data-bs-toggle="tab" data-bs-target="#panel-our-data" type="button" role="tab">I Tuoi Dati</button>
+                    </li>
+                    <li class="nav-item" role="presentation">
+                        <button class="nav-link" id="tab-external" data-bs-toggle="tab" data-bs-target="#panel-external" type="button" role="tab">Storico Mercato (EN)</button>
+                    </li>
+                </ul>
+                <div class="tab-content">
+                    <div class="tab-pane fade show active" id="panel-our-data" role="tabpanel">
+                        <div id="price-modal-body">
+                            <div class="text-center py-5"><span class="spinner-border"></span></div>
+                        </div>
+                    </div>
+                    <div class="tab-pane fade" id="panel-external" role="tabpanel">
+                        <div id="external-price-body">
+                            <div class="text-center py-5 text-muted">Seleziona un prodotto per vedere lo storico.</div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -597,23 +614,42 @@ async function regenerateSelectedQueries() {
 
 let currentMonitorId = null;
 
+let currentProductName = '';
+
 async function viewPrices(monitorId) {
     currentMonitorId = monitorId;
     const modal = new bootstrap.Modal(document.getElementById('priceModal'));
     const body = document.getElementById('price-modal-body');
+    const extBody = document.getElementById('external-price-body');
+
+    // Reset tabs to first tab
+    document.getElementById('tab-our-data').click();
 
     body.innerHTML = '<div class="text-center py-5"><span class="spinner-border"></span></div>';
+    extBody.innerHTML = '<div class="text-center py-5 text-muted">Clicca per caricare lo storico esterno.</div>';
     modal.show();
 
     await refreshPriceModal(monitorId);
+
+    // Load external tab on click (lazy)
+    const extTab = document.getElementById('tab-external');
+    extTab.onclick = function() {
+        if (extBody.dataset.loaded !== 'true') {
+            loadExternalPrices(currentProductName);
+            extBody.dataset.loaded = 'true';
+        }
+    };
 }
 
 async function refreshPriceModal(monitorId) {
     const body = document.getElementById('price-modal-body');
+    const extBody = document.getElementById('external-price-body');
+    extBody.dataset.loaded = 'false';
 
     const res = await fetch(`/api/monitors/${monitorId}/prices?show_all=true`);
     const data = await res.json();
 
+    currentProductName = data.product_name || '';
     body.innerHTML = renderPriceModal(data);
 
     if (data.history && data.history.length > 0) {
@@ -822,6 +858,82 @@ function renderChart(history, yourPrice) {
             plugins: { tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': €' + ctx.raw.toFixed(2) } } }
         }
     });
+}
+
+function loadExternalPrices(productName) {
+    const body = document.getElementById('external-price-body');
+    if (!productName) {
+        body.innerHTML = '<div class="text-center py-4 text-muted">Nome prodotto non disponibile.</div>';
+        return;
+    }
+
+    // Pulisci il nome per la ricerca: rimuovi (IT), (EN), (JP) etc. ma tienili per info
+    const langMatch = productName.match(/\((IT|EN|JP|DE|FR|ES|KO|ZH)\)\s*$/i);
+    const lang = langMatch ? langMatch[1].toUpperCase() : '';
+    const cleanName = productName
+        .replace(/\s*\((IT|EN|JP|DE|FR|ES|KO|ZH)\)\s*$/i, '')
+        .replace(/\s*-\s*$/, '')
+        .trim();
+
+    // Genera query per i vari siti (in inglese per TCGPlayer/PriceCharting)
+    const searchQuery = encodeURIComponent(cleanName);
+    const tcgPlayerSearch = `https://www.tcgplayer.com/search/all/product?q=${searchQuery}&view=grid`;
+    const priceChartingSearch = `https://www.pricecharting.com/search-products?q=${searchQuery}&type=prices`;
+    const cardmarketSearch = `https://www.cardmarket.com/en/Pokemon/Products/Search?searchString=${searchQuery}`;
+
+    let html = `
+        <div class="alert alert-info mb-3" style="font-size: 12px;">
+            <i class="bi bi-info-circle"></i>
+            <strong>Fonte esterna</strong> — I prezzi storici provengono da siti internazionali e si riferiscono
+            a <strong>prodotti in lingua inglese (EN)</strong>. I prezzi possono differire dalle versioni italiane/giapponesi.
+            ${lang && lang !== 'EN' ? `<br>Il tuo prodotto risulta in lingua <strong>${lang}</strong>.` : ''}
+        </div>
+
+        <div class="mb-4">
+            <h6 class="mb-2">RICERCA: "${escapeHtml(cleanName)}"</h6>
+        </div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-4">
+                <a href="${tcgPlayerSearch}" target="_blank" class="btn btn-primary w-100 py-3">
+                    <i class="bi bi-box-arrow-up-right"></i><br>
+                    <strong>TCGPlayer</strong><br>
+                    <small>Prezzi USA + storico</small>
+                </a>
+            </div>
+            <div class="col-md-4">
+                <a href="${priceChartingSearch}" target="_blank" class="btn btn-success w-100 py-3">
+                    <i class="bi bi-graph-up"></i><br>
+                    <strong>PriceCharting</strong><br>
+                    <small>Grafici storici sealed</small>
+                </a>
+            </div>
+            <div class="col-md-4">
+                <a href="${cardmarketSearch}" target="_blank" class="btn btn-warning w-100 py-3">
+                    <i class="bi bi-shop"></i><br>
+                    <strong>Cardmarket</strong><br>
+                    <small>Prezzi EU</small>
+                </a>
+            </div>
+        </div>
+
+        <hr>
+
+        <div class="mb-3">
+            <h6>PRICECHARTING — STORICO PREZZI</h6>
+            <p class="text-muted small">Grafico embedded da PriceCharting (se disponibile per questo prodotto):</p>
+        </div>
+        <div id="pricecharting-embed" class="text-center">
+            <iframe
+                src="https://www.pricecharting.com/search-products?q=${searchQuery}&type=prices"
+                style="width: 100%; height: 500px; border: 2px solid var(--wb-shadow, #555);"
+                sandbox="allow-scripts allow-same-origin allow-popups"
+                loading="lazy"
+            ></iframe>
+        </div>
+    `;
+
+    body.innerHTML = html;
 }
 
 async function collectPrices(monitorId, btn) {
