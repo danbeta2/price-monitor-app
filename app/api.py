@@ -45,18 +45,13 @@ def get_categories():
 
 @api_bp.route('/debug/config')
 def debug_config():
-    """Endpoint di debug per verificare le configurazioni"""
+    """Stato configurazione API (solo booleani, nessuna credenziale)"""
     from flask import current_app
     return jsonify({
-        'wc_url': bool(current_app.config.get('WC_URL')),
-        'wc_url_value': (current_app.config.get('WC_URL', '')[:30] + '...') if current_app.config.get('WC_URL') else None,
-        'wc_key': bool(current_app.config.get('WC_CONSUMER_KEY')),
-        'wc_key_prefix': current_app.config.get('WC_CONSUMER_KEY', '')[:10] + '...' if current_app.config.get('WC_CONSUMER_KEY') else None,
-        'wc_secret': bool(current_app.config.get('WC_CONSUMER_SECRET')),
-        'serpapi': bool(current_app.config.get('SERPAPI_KEY')),
-        'ebay_id': bool(current_app.config.get('EBAY_CLIENT_ID')),
-        'ebay_secret': bool(current_app.config.get('EBAY_CLIENT_SECRET')),
-        'gemini': bool(current_app.config.get('GEMINI_API_KEY')),
+        'wc_configured': bool(current_app.config.get('WC_URL') and current_app.config.get('WC_CONSUMER_KEY')),
+        'serpapi_configured': bool(current_app.config.get('SERPAPI_KEY')),
+        'ebay_configured': bool(current_app.config.get('EBAY_CLIENT_ID') and current_app.config.get('EBAY_CLIENT_SECRET')),
+        'gemini_configured': bool(current_app.config.get('GEMINI_API_KEY')),
     })
 
 @api_bp.route('/api-status')
@@ -155,17 +150,23 @@ def sync_products():
         page = 1
         max_pages = 10  # Limite sicurezza: max 500 prodotti
         
+        errors = []
         while page <= max_pages:
             print(f"[Sync] Fetching page {page} (in_stock_only=True)...")
             batch = wc.get_products(page=page, per_page=50, in_stock_only=True)
-            
-            if batch is None and page == 1:
-                return jsonify({
-                    'error': 'Errore connessione WooCommerce',
-                    'details': wc.last_error or 'Impossibile connettersi',
-                    'synced': 0
-                }), 500
-            
+
+            if batch is None:
+                error_msg = f"Errore pagina {page}: {wc.last_error or 'Connessione fallita'}"
+                print(f"[Sync] {error_msg}")
+                if page == 1:
+                    return jsonify({
+                        'error': 'Errore connessione WooCommerce',
+                        'details': wc.last_error or 'Impossibile connettersi',
+                        'synced': 0
+                    }), 500
+                errors.append(error_msg)
+                break
+
             if not batch:
                 break
             
@@ -223,13 +224,17 @@ def sync_products():
             db.session.commit()
             print(f"[Sync] Removed {removed} products (out-of-stock or single cards)")
         
-        return jsonify({
+        result = {
             'synced': synced,
             'skipped_single_cards': skipped_single_cards,
             'deleted_singles': deleted_singles,
             'removed': removed,
             'message': f'Sincronizzati {synced} prodotti sealed' + (f', eliminate {deleted_singles} carte singole' if deleted_singles > 0 else '') + (f', rimossi {removed}' if removed > 0 else '')
-        })
+        }
+        if errors:
+            result['warnings'] = errors
+            result['message'] += f' (ATTENZIONE: {len(errors)} errori durante il sync)'
+        return jsonify(result)
         
     except Exception as e:
         db.session.rollback()
@@ -244,39 +249,66 @@ def sync_products():
 
 @api_bp.route('/monitors', methods=['GET'])
 def get_monitors():
-    monitors = Monitor.query.all()
+    from sqlalchemy.orm import joinedload
+    from sqlalchemy import case
+
+    # Carica monitor con prodotti in una sola query (no N+1)
+    monitors = Monitor.query.options(joinedload(Monitor.product)).all()
+
+    # Precalcola stats aggregate per tutti i monitor in 1 query
+    record_stats = db.session.query(
+        PriceRecord.monitor_id,
+        func.count(PriceRecord.id).label('total_records'),
+        func.count(case((PriceRecord.is_valid == True, 1))).label('valid_records'),
+    ).group_by(PriceRecord.monitor_id).all()
+
+    stats_map = {s.monitor_id: {'total': s.total_records, 'valid': s.valid_records} for s in record_stats}
+
+    # Precalcola best_price per ogni monitor (solo validi)
+    # Subquery: prezzo minimo valido per monitor
+    best_prices_q = db.session.query(
+        PriceRecord.monitor_id,
+        func.min(PriceRecord.price).label('min_price'),
+    ).filter(
+        PriceRecord.is_valid == True,
+    ).group_by(PriceRecord.monitor_id).all()
+
+    best_price_map = {bp.monitor_id: bp.min_price for bp in best_prices_q}
+
     result = []
-    
     for m in monitors:
-        # Salta carte singole - non devono apparire mai
         if m.product and is_single_card(m.product.name):
             continue
+
         data = m.to_dict()
         data['product'] = m.product.to_dict() if m.product else None
-        
-        # Prima cerca tra i validi
-        best_price = PriceRecord.query.filter_by(
-            monitor_id=m.id, is_valid=True
-        ).order_by(PriceRecord.price.asc()).first()
-        
-        # Se non ci sono validi, prendi comunque il miglior prezzo (per riferimento)
-        if not best_price:
-            best_price = PriceRecord.query.filter_by(
-                monitor_id=m.id
-            ).order_by(PriceRecord.price.asc()).first()
-            data['best_price_unvalidated'] = True
+
+        your_price = m.product.price if m.product else None
+        tolerance_pct = m.price_tolerance if m.price_tolerance and m.price_tolerance > 0 else 50
+        min_reasonable = your_price * (1 - tolerance_pct / 100) if your_price else 0.01
+        max_reasonable = your_price * (1 + tolerance_pct / 100) if your_price else 100000
+
+        # Best price dal pre-calcolo, filtrato per range ragionevole
+        raw_best = best_price_map.get(m.id)
+        if raw_best and min_reasonable <= raw_best <= max_reasonable:
+            data['best_price'] = raw_best
+            # Recupera seller solo per il best price (1 query solo se serve)
+            best_record = PriceRecord.query.filter(
+                PriceRecord.monitor_id == m.id,
+                PriceRecord.is_valid == True,
+                PriceRecord.price == raw_best,
+            ).first()
+            data['best_seller'] = best_record.seller_name if best_record else None
         else:
-            data['best_price_unvalidated'] = False
-        
-        data['best_price'] = best_price.price if best_price else None
-        data['best_seller'] = best_price.seller_name if best_price else None
-        
-        # Conta record totali e validi
-        data['total_records'] = PriceRecord.query.filter_by(monitor_id=m.id).count()
-        data['valid_records'] = PriceRecord.query.filter_by(monitor_id=m.id, is_valid=True).count()
-        
+            data['best_price'] = None
+            data['best_seller'] = None
+
+        s = stats_map.get(m.id, {'total': 0, 'valid': 0})
+        data['total_records'] = s['total']
+        data['valid_records'] = s['valid']
+
         result.append(data)
-    
+
     return jsonify({'monitors': result})
 
 @api_bp.route('/monitors', methods=['POST'])
@@ -412,6 +444,41 @@ def update_monitor(monitor_id):
     db.session.commit()
     return jsonify({'message': 'Monitor updated', 'monitor': monitor.to_dict()})
 
+@api_bp.route('/monitors/<int:monitor_id>/regenerate-query', methods=['POST'])
+def regenerate_monitor_query(monitor_id):
+    """Rigenera la query di ricerca usando Gemini AI"""
+    from app.services.gemini import GeminiService
+    
+    monitor = Monitor.query.get_or_404(monitor_id)
+    
+    if not monitor.product:
+        return jsonify({'error': 'Monitor senza prodotto associato'}), 400
+    
+    gemini = GeminiService()
+    
+    if not gemini.is_configured():
+        return jsonify({'error': 'Gemini non configurato'}), 400
+    
+    if not gemini.can_make_request():
+        return jsonify({'error': 'Limite giornaliero Gemini raggiunto'}), 429
+    
+    old_query = monitor.search_query
+    new_query, product_type = gemini.generate_search_query(
+        monitor.product.name, 
+        monitor.product.price
+    )
+    
+    monitor.search_query = new_query
+    db.session.commit()
+    
+    return jsonify({
+        'message': 'Query rigenerata con AI',
+        'old_query': old_query,
+        'new_query': new_query,
+        'product_type': product_type,
+        'monitor': monitor.to_dict()
+    })
+
 @api_bp.route('/monitors/bulk-update', methods=['POST'])
 def bulk_update_monitors():
     """Aggiorna più monitor in batch"""
@@ -442,6 +509,55 @@ def bulk_update_monitors():
     db.session.commit()
     return jsonify({'updated': updated, 'message': f'{updated} monitor aggiornati'})
 
+@api_bp.route('/monitors/regenerate-queries', methods=['POST'])
+def regenerate_all_queries():
+    """Rigenera le query di tutti i monitor selezionati usando Gemini AI"""
+    from app.services.gemini import GeminiService
+    
+    data = request.get_json(silent=True) or {}
+    monitor_ids = data.get('monitor_ids', [])
+    
+    if not monitor_ids:
+        return jsonify({'error': 'No monitor IDs provided'}), 400
+    
+    gemini = GeminiService()
+    
+    if not gemini.is_configured():
+        return jsonify({'error': 'Gemini non configurato'}), 400
+    
+    regenerated = 0
+    skipped = 0
+    
+    for monitor_id in monitor_ids:
+        if not gemini.can_make_request():
+            skipped += (len(monitor_ids) - regenerated - skipped)
+            break
+        
+        monitor = Monitor.query.get(monitor_id)
+        if not monitor or not monitor.product:
+            skipped += 1
+            continue
+        
+        new_query, product_type = gemini.generate_search_query(
+            monitor.product.name, 
+            monitor.product.price
+        )
+        
+        monitor.search_query = new_query
+        regenerated += 1
+        
+        # Commit ogni 5 per evitare timeout
+        if regenerated % 5 == 0:
+            db.session.commit()
+    
+    db.session.commit()
+    
+    return jsonify({
+        'regenerated': regenerated,
+        'skipped': skipped,
+        'message': f'{regenerated} query rigenerate con AI'
+    })
+
 @api_bp.route('/monitors/<int:monitor_id>/collect', methods=['POST'])
 def collect_prices(monitor_id):
     monitor = Monitor.query.get_or_404(monitor_id)
@@ -462,10 +578,12 @@ def set_price_feedback(record_id):
     
     # Aggiorna il record
     record.user_feedback = is_correct
-    
-    # Se l'utente dice che è errato, marca come non valido
+
+    # Feedback aggiorna anche la validità del record
     if not is_correct:
         record.is_valid = False
+    else:
+        record.is_valid = True
     
     # Salva anche nel feedback storico per training Gemini
     monitor = record.monitor
@@ -506,11 +624,11 @@ def get_monitor_prices(monitor_id):
     
     # Prezzo di riferimento per filtrare outlier
     your_price = monitor.product.price if monitor.product else None
-    
-    # Calcola range ragionevole per escludere outlier
-    # Range ±35%: se il tuo prezzo è €100, accettiamo da €65 a €135
-    min_reasonable = your_price * 0.65 if your_price else 0.01
-    max_reasonable = your_price * 1.35 if your_price else 100000
+
+    # Usa la tolerance configurata dal monitor
+    tolerance_pct = monitor.price_tolerance if monitor.price_tolerance and monitor.price_tolerance > 0 else 50
+    min_reasonable = your_price * (1 - tolerance_pct / 100) if your_price else 0.01
+    max_reasonable = your_price * (1 + tolerance_pct / 100) if your_price else 100000
     
     # Get prices - tutti o solo validi
     query = PriceRecord.query.filter_by(monitor_id=monitor_id)
@@ -744,12 +862,15 @@ def cleanup_single_cards():
 @api_bp.route('/monitors/create-all', methods=['POST'])
 def create_monitors_for_all():
     """Crea UN monitor per ogni prodotto SEALED disponibile (esclude carte singole)"""
+    from app.services.gemini import GeminiService
+    
     try:
         data = request.get_json(silent=True) or {}
     except:
         data = {}
     price_tolerance = data.get('price_tolerance', 40)
     language = data.get('language', 'it')
+    use_ai_query = data.get('use_ai_query', True)  # Usa Gemini per generare query
     
     # Prendi tutti i prodotti in stock dal database locale
     products = Product.query.filter_by(stock_status='instock').all()
@@ -761,9 +882,12 @@ def create_monitors_for_all():
             'created': 0
         })
     
+    gemini = GeminiService()
+    
     created = 0
     skipped = 0
     skipped_single_cards = 0
+    ai_queries = 0
     
     for product in products:
         # ESCLUDI carte singole per risparmiare API
@@ -777,10 +901,17 @@ def create_monitors_for_all():
             skipped += 1
             continue
         
+        # Genera query ottimizzata con Gemini (se abilitato)
+        if use_ai_query and gemini.is_configured() and gemini.can_make_request():
+            search_query, product_type = gemini.generate_search_query(product.name, product.price)
+            ai_queries += 1
+        else:
+            search_query = product.name
+        
         # Crea UN monitor che cerca su ENTRAMBE le fonti
         monitor = Monitor(
             product_id=product.id,
-            search_query=product.name,
+            search_query=search_query,
             source='all',  # Cerca su tutte e 3 le fonti
             language=language,
             price_tolerance=price_tolerance,
@@ -788,6 +919,10 @@ def create_monitors_for_all():
         )
         db.session.add(monitor)
         created += 1
+        
+        # Commit ogni 10 per evitare timeout
+        if created % 10 == 0:
+            db.session.commit()
     
     db.session.commit()
     
@@ -795,6 +930,7 @@ def create_monitors_for_all():
         'created': created,
         'skipped': skipped,
         'skipped_single_cards': skipped_single_cards,
+        'ai_queries_generated': ai_queries,
         'total_products': len(products),
-        'message': f'Creati {created} monitor sealed (escluse {skipped_single_cards} carte singole)'
+        'message': f'Creati {created} monitor (query AI: {ai_queries})'
     })

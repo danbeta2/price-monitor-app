@@ -142,48 +142,52 @@ class PriceCollector:
         today = datetime.utcnow().date()
         
         # STEP 1: Pre-filtra con regole base (prezzo, keywords negativi)
-        pre_filtered = []
-        for item in all_items:
-            basic_valid = self._validate_result(
-                item, your_price, monitor.price_tolerance, 
+        # Ogni item riceve un indice globale per tracciamento AI
+        for idx, item in enumerate(all_items):
+            item['_global_idx'] = idx
+            item['_basic_valid'] = self._validate_result(
+                item, your_price, monitor.price_tolerance,
                 monitor.search_query, language
             )
-            item['_basic_valid'] = basic_valid
-            pre_filtered.append(item)
-        
+
         # STEP 2: Validazione AI con Gemini (solo se abilitato e configurato)
-        items_for_ai = [item for item in pre_filtered if item['_basic_valid']]
-        
-        ai_results = {}
+        items_for_ai = [item for item in all_items if item['_basic_valid']]
+
+        # Mappa: global_idx -> (is_valid, reason) da Gemini
+        ai_decision = {}
         use_ai = PriceCollector._use_ai_validation and self.gemini.is_configured() and self.gemini.can_make_request()
-        
+
         if items_for_ai and use_ai:
             print(f"[Gemini] Validating {len(items_for_ai)} items for: {monitor.search_query[:50]}...")
-            ai_results = self.gemini.batch_validate(
-                monitor.search_query, 
-                items_for_ai, 
+            batch_results = self.gemini.batch_validate(
+                monitor.search_query,
+                items_for_ai,
                 your_price,
-                max_items=20  # Limita per evitare prompt troppo lunghi
+                max_items=20
             )
+            # Mappa i risultati batch (indice locale) -> indice globale
+            for local_idx, (is_valid, reason) in batch_results.items():
+                if local_idx < len(items_for_ai):
+                    global_idx = items_for_ai[local_idx]['_global_idx']
+                    ai_decision[global_idx] = (is_valid, reason)
         elif items_for_ai and not use_ai:
             print(f"[PriceCollector] AI validation skipped (disabled or no credits)")
-        
+
         # STEP 3: Salva risultati
-        ai_index = 0
-        for item in pre_filtered:
+        for item in all_items:
             basic_valid = item.pop('_basic_valid', True)
-            
+            global_idx = item.pop('_global_idx', -1)
+
             # Determina validità finale
             if not basic_valid:
                 is_valid = False
-            elif item in items_for_ai and ai_index in ai_results:
-                is_valid, reason = ai_results.get(ai_index, (True, ""))
+            elif global_idx in ai_decision:
+                is_valid, reason = ai_decision[global_idx]
                 if is_valid:
                     results['ai_validated'] += 1
                 else:
                     results['ai_rejected'] += 1
                     print(f"[Gemini] Rejected: {item.get('title', '')[:60]}... - {reason}")
-                ai_index += 1
             else:
                 is_valid = basic_valid
             
@@ -230,19 +234,49 @@ class PriceCollector:
         
         return results
     
+    # Domini del proprio negozio da escludere dai competitor
+    OWN_STORE_DOMAINS = None
+
+    @classmethod
+    def _get_own_domains(cls):
+        """Estrae i domini del proprio negozio da WC_URL (cached)"""
+        if cls.OWN_STORE_DOMAINS is None:
+            from flask import current_app
+            wc_url = current_app.config.get('WC_URL', '')
+            domains = set()
+            if wc_url:
+                # Estrai dominio da URL (es. "https://scimmia.it" -> "scimmia.it", "scimmia")
+                import re
+                match = re.search(r'://(?:www\.)?([^/]+)', wc_url)
+                if match:
+                    full_domain = match.group(1).lower()
+                    domains.add(full_domain)                    # es. "scimmia.it"
+                    domains.add(full_domain.split('.')[0])       # es. "scimmia"
+            cls.OWN_STORE_DOMAINS = domains
+        return cls.OWN_STORE_DOMAINS
+
     def _validate_result(self, item, your_price, tolerance, search_query, language='it'):
         """Valida un risultato con logica intelligente per TCG sealed products"""
         title = item.get('title', '')
         title_lower = title.lower()
         query_lower = search_query.lower()
         price = item.get('price', 0)
-        
-        # ========== 1. FILTRO PREZZO (±35%) ==========
-        # Range più ampio per catturare offerte e variazioni di mercato
-        # Gemini farà il filtro fine sui prodotti che passano
+
+        # ========== 0. ESCLUDI IL PROPRIO NEGOZIO ==========
+        own_domains = self._get_own_domains()
+        if own_domains:
+            seller = (item.get('seller_name') or '').lower()
+            url = (item.get('url') or '').lower()
+            for domain in own_domains:
+                if domain in seller or domain in url:
+                    return False
+
+        # ========== 1. FILTRO PREZZO (usa tolerance del monitor) ==========
+        # tolerance e la percentuale configurata dall'utente (default 50%)
+        tolerance_pct = tolerance if tolerance and tolerance > 0 else 50
         if your_price and your_price > 0:
-            min_price = your_price * 0.65  # Non meno del 65%
-            max_price = your_price * 1.35  # Non più del 135%
+            min_price = your_price * (1 - tolerance_pct / 100)
+            max_price = your_price * (1 + tolerance_pct / 100)
             if not (min_price <= price <= max_price):
                 return False
         
@@ -258,26 +292,48 @@ class PriceCollector:
             'repack', 'repacked', 'resealed', 'riconfezionato',
             # Gradate
             'psa ', 'bgs ', 'cgc ', 'graded', 'gradato', 'gem mint',
-            # Accessori
-            'sleeves', 'bustine protettive', 'deck box', 'playmat', 'tappetino', 'binder',
+            # Accessori - prodotti
+            'sleeves', 'bustine protettive', 'deck box', 'playmat', 'tappetino',
+            'binder', 'album foto', 'portfolio', 'raccoglitore',
+            'toploader', 'top loader', 'card saver', 'one touch',
+            'inner sleeve', 'penny sleeve', 'bustina protettiva',
+            # Accessori - brand (non producono carte/sealed)
+            'ultra pro', 'ultimate guard', 'dragon shield', 'gamegenic',
+            'arkhive', 'xenoskin', 'alcove', 'vault x', 'bcw ',
+            'sideloading', 'matte sleeve',
             # Carte singole
             'singola', 'singolo', 'single card', 'holo rare', 'full art', 'secret rare',
+            # Carte singole - pattern prezzo basso
+            'common', 'uncommon', 'rare holo', 'reverse holo',
         ]
         for keyword in critical_negatives:
             if keyword in title_lower:
                 return False
         
-        # ========== 3. MATCH TIPO PRODOTTO (critico!) ==========
+        # ========== 3. FILTRO PRODOTTI NON-TCG ==========
+        # Se il titolo non contiene NESSUN termine TCG, probabilmente è un accessorio
+        tcg_indicators = [
+            'pokemon', 'pokémon', 'magic', 'mtg', 'yugioh', 'yu-gi-oh',
+            'lorcana', 'one piece', 'digimon', 'dragon ball',
+            'booster', 'display', 'bundle', 'etb', 'blister', 'tin ',
+            'buste', 'busta', 'espansione', 'expansion',
+            'scarlet', 'violet', 'scarlatto', 'violetto',
+        ]
+        has_tcg_term = any(term in title_lower for term in tcg_indicators)
+        if not has_tcg_term:
+            return False
+
+        # ========== 4. MATCH TIPO PRODOTTO (critico!) ==========
         # Se cerco "Display 36" non voglio "Bundle 6" o "Blister 3"
         if not self._match_product_type_strict(query_lower, title_lower):
             return False
         
-        # ========== 4. MATCH ESPANSIONE/SET ==========
+        # ========== 5. MATCH ESPANSIONE/SET ==========
         # Le parole chiave dell'espansione devono corrispondere
         if not self._match_expansion(query_lower, title_lower):
             return False
-        
-        # ========== 5. LINGUA ==========
+
+        # ========== 6. LINGUA ==========
         if language == 'it':
             foreign_keywords = ['japanese', 'giapponese', 'japan', 'korean', 'coreano', 
                                'chinese', 'cinese', 'china', 'german', 'tedesco']
@@ -294,11 +350,14 @@ class PriceCollector:
         product_categories = {
             'display': ['display', 'box 36', '36 buste', '36 booster', 'booster box'],
             'bundle': ['bundle', '6 buste', '6 booster'],
-            'etb': ['etb', 'elite trainer', 'trainer box'],
+            'etb': ['etb', 'elite trainer', 'trainer box', 'set allenatore'],
             'tin': ['tin ', ' tin', 'latta'],
-            'blister': ['blister', '3 buste', '3 booster', 'checklane'],
+            'blister': ['blister', '3 buste', '3 booster', '2 buste', '2 booster', '1 busta', '1 booster', 'checklane'],
             'collection': ['collection box', 'collezione premium', 'premium collection'],
             'gift': ['gift set', 'gift box', 'set regalo'],
+            'upc': ['upc', 'ultra premium collection', 'ultra premium'],
+            'case': ['case 6', 'case 10', 'case 12', ' case ', 'cassa'],
+            'booster_single': ['busta singola', 'bustina ', 'singola busta', 'single pack'],
         }
         
         # Trova la categoria del prodotto cercato
@@ -340,27 +399,38 @@ class PriceCollector:
     
     def _match_expansion(self, query, title):
         """Verifica che l'espansione/set corrisponda"""
-        
-        # Estrai parole significative dalla query (escludi parole comuni)
+
+        # Parole comuni da ignorare nel matching
         common_words = {
             'pokemon', 'pokémon', 'tcg', 'card', 'cards', 'carte', 'box', 'display',
-            'booster', 'bundle', 'pack', 'buste', 'set', 'collection', 'collezione',
+            'booster', 'bundle', 'pack', 'buste', 'busta', 'set', 'collection', 'collezione',
             'ita', 'ital', 'italiano', 'italiana', 'eng', 'english', 'inglese',
             'sealed', 'sigillato', 'new', 'nuovo', 'nuova', 'the', 'a', 'di', 'del',
             'della', 'e', 'and', 'or', 'with', 'con', 'per', 'for', 'in', 'da',
+            'promo', 'carta', 'con', 'ultra', 'premium', 'mega', 'ex', 'gx', 'vmax',
+            'vstar', 'tin', 'latta', 'elite', 'trainer', 'allenatore',
+            'magic', 'mtg', 'gathering', 'yugioh', 'lorcana',
         }
-        
+
+        # Parole che indicano tipo prodotto (non espansione)
+        type_words = {
+            'display', 'box', 'booster', 'bundle', 'pack', 'buste', 'busta',
+            'blister', 'tin', 'latta', 'etb', 'elite', 'trainer', 'collection',
+            'collezione', 'upc', 'case', 'gift', 'starter', 'deck', 'theme',
+            'structure', 'checklane', 'allenatore', 'fuoriclasse',
+        }
+
         # Estrai parole significative dalla query
         query_words = set(re.findall(r'[a-zA-ZàèéìòùÀÈÉÌÒÙ]{3,}', query))
-        significant_query_words = [w for w in query_words if w not in common_words]
-        
+        significant_query_words = [w for w in query_words if w not in common_words and w not in type_words]
+
         if not significant_query_words:
             return True
-        
-        # Almeno il 60% delle parole significative deve essere nel titolo
+
+        # Almeno il 75% delle parole significative deve essere nel titolo
         matches = sum(1 for w in significant_query_words if w in title)
-        required = max(1, int(len(significant_query_words) * 0.6))
-        
+        required = max(1, int(len(significant_query_words) * 0.75))
+
         return matches >= required
     
     def _match_product_type(self, search_query, title):

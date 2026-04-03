@@ -66,6 +66,9 @@
         </select>
     </div>
     <div class="d-flex gap-2">
+        <button class="btn btn-sm btn-outline-primary" id="btn-regenerate-queries" disabled title="Rigenera query con AI">
+            <i class="bi bi-stars"></i> AI Query
+        </button>
         <button class="btn btn-sm btn-outline-secondary" id="btn-bulk-edit" disabled title="Modifica in batch">
             <i class="bi bi-pencil"></i>
         </button>
@@ -147,8 +150,13 @@
                 <input type="hidden" id="edit-monitor-id">
                 <div class="mb-3">
                     <label class="form-label">Query di Ricerca</label>
-                    <input type="text" class="form-control" id="edit-query">
-                    <small class="text-muted">Modifica per migliorare i risultati di ricerca</small>
+                    <div class="input-group">
+                        <input type="text" class="form-control" id="edit-query">
+                        <button class="btn btn-outline-primary" type="button" onclick="regenerateQuery()" title="Rigenera con AI">
+                            <i class="bi bi-stars"></i> AI
+                        </button>
+                    </div>
+                    <small class="text-muted">Clicca "AI" per generare una query ottimizzata con Gemini</small>
                 </div>
                 <div class="mb-3">
                     <label class="form-label">Fonte</label>
@@ -260,6 +268,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Bulk edit button
     document.getElementById('btn-bulk-edit').addEventListener('click', openBulkEdit);
+    
+    // Regenerate queries button
+    document.getElementById('btn-regenerate-queries').addEventListener('click', regenerateSelectedQueries);
     
     // AI validation toggle
     document.getElementById('ai-validation-toggle').addEventListener('change', function() {
@@ -405,9 +416,6 @@ function renderMonitors() {
         }
         
         let priceNote = '';
-        if (m.best_price_unvalidated) {
-            priceNote = '<br><small class="text-warning">⚠️ non validato</small>';
-        }
         
         const recordsInfo = m.total_records > 0 ? 
             `<small class="text-muted">${m.valid_records}/${m.total_records} validi</small>` : 
@@ -433,12 +441,12 @@ function renderMonitors() {
                              class="me-2" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;"
                              onerror="this.src='/static/img/placeholder.png'">
                         <div>
-                            <div class="fw-semibold text-truncate" style="max-width: 200px;" title="${escapeHtml(product.name || '')}">${escapeHtml((product.name || '').substring(0, 35))}${(product.name || '').length > 35 ? '...' : ''}</div>
+                            <div class="fw-semibold" title="${escapeHtml(product.name || '')}">${escapeHtml(product.name || '')}</div>
                             <small class="text-muted">${product.sku || ''}</small>
                         </div>
                     </div>
                 </td>
-                <td><code class="small text-truncate d-block" style="max-width: 150px;" title="${escapeHtml(m.search_query)}">${escapeHtml(m.search_query.substring(0, 25))}${m.search_query.length > 25 ? '...' : ''}</code></td>
+                <td><code class="small">${escapeHtml(m.search_query)}</code></td>
                 <td>${sourceBadge}</td>
                 <td><strong>€${(product.price || 0).toFixed(2)}</strong></td>
                 <td class="${priceClass}">
@@ -484,6 +492,7 @@ function updateSelectedCount() {
     document.getElementById('btn-collect-selected').disabled = count === 0;
     document.getElementById('btn-delete-selected').disabled = count === 0;
     document.getElementById('btn-bulk-edit').disabled = count === 0;
+    document.getElementById('btn-regenerate-queries').disabled = count === 0;
     
     // Update select-all checkbox
     const allCheckboxes = document.querySelectorAll('.monitor-checkbox');
@@ -552,22 +561,65 @@ async function deleteSelected() {
     loadMonitors();
 }
 
+// Rigenera query selezionate con AI
+async function regenerateSelectedQueries() {
+    if (selectedMonitors.size === 0) return;
+    
+    if (!confirm(`Rigenerare le query per ${selectedMonitors.size} monitor con AI?\nQuesto consuma crediti Gemini.`)) return;
+    
+    const btn = document.getElementById('btn-regenerate-queries');
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span> AI...';
+    
+    try {
+        const res = await fetch('/api/monitors/regenerate-queries', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ monitor_ids: Array.from(selectedMonitors) })
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+            alert(`${data.regenerated} query rigenerate con AI` + (data.skipped > 0 ? `, ${data.skipped} saltati` : ''));
+            loadMonitors();
+            checkApiStatus();  // Aggiorna contatori Gemini
+        } else {
+            alert(data.error || 'Errore');
+        }
+    } catch (e) {
+        alert('Errore: ' + e.message);
+    }
+    
+    btn.disabled = selectedMonitors.size === 0;
+    btn.innerHTML = '<i class="bi bi-stars"></i> AI Query';
+}
+
+let currentMonitorId = null;
+
 async function viewPrices(monitorId) {
+    currentMonitorId = monitorId;
     const modal = new bootstrap.Modal(document.getElementById('priceModal'));
     const body = document.getElementById('price-modal-body');
-    
+
     body.innerHTML = '<div class="text-center py-5"><span class="spinner-border"></span></div>';
     modal.show();
-    
+
+    await refreshPriceModal(monitorId);
+}
+
+async function refreshPriceModal(monitorId) {
+    const body = document.getElementById('price-modal-body');
+
     const res = await fetch(`/api/monitors/${monitorId}/prices?show_all=true`);
     const data = await res.json();
-    
+
     body.innerHTML = renderPriceModal(data);
-    
+
     if (data.history && data.history.length > 0) {
         renderChart(data.history, data.your_price);
     }
-    
+
     const toggle = document.getElementById('showAllPrices');
     if (toggle) {
         toggle.addEventListener('change', function() {
@@ -593,12 +645,13 @@ function renderPriceModal(data) {
         let positionBadge = '';
         
         if (yourPrice && avgPrice) {
-            if (yourPrice <= (data.stats.min_price || 0) * 1.05) {
-                positionBadge = '<span class="badge bg-success">🏆 Miglior prezzo!</span>';
+            const minPrice = data.stats.min_price || 0;
+            if (yourPrice <= minPrice) {
+                positionBadge = '<span class="badge bg-success">Miglior prezzo!</span>';
             } else if (yourPrice < avgPrice) {
-                positionBadge = '<span class="badge bg-info">✓ Sotto la media</span>';
-            } else if (yourPrice > avgPrice * 1.1) {
-                positionBadge = '<span class="badge bg-warning">⚠️ Sopra la media</span>';
+                positionBadge = '<span class="badge bg-info">Sotto la media</span>';
+            } else {
+                positionBadge = '<span class="badge bg-warning">Sopra la media</span>';
             }
         }
         
@@ -700,12 +753,18 @@ function renderPriceModal(data) {
                                                (p.source === 'google_web' ? '<span class="badge bg-info">W</span>' : 
                                                '<span class="badge bg-warning text-dark">E</span>');
                             
-                            // Feedback buttons
+                            // Feedback buttons (sempre cliccabili per cambiare idea)
                             let feedbackBtns = '';
                             if (p.user_feedback === true) {
-                                feedbackBtns = '<span class="badge bg-success">✓ Corretto</span>';
+                                feedbackBtns = `
+                                    <button class="btn btn-sm btn-success py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${p.id}, true)" title="Corretto (clicca per rimuovere)" disabled>✓</button>
+                                    <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${p.id}, false)" title="Cambia in ERRATO">✗</button>
+                                `;
                             } else if (p.user_feedback === false) {
-                                feedbackBtns = '<span class="badge bg-danger">✗ Errato</span>';
+                                feedbackBtns = `
+                                    <button class="btn btn-sm btn-outline-success py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${p.id}, true)" title="Cambia in CORRETTO">✓</button>
+                                    <button class="btn btn-sm btn-danger py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${p.id}, false)" title="Errato (clicca per rimuovere)" disabled>✗</button>
+                                `;
                             } else {
                                 feedbackBtns = `
                                     <button class="btn btn-sm btn-outline-success py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${p.id}, true)" title="Questo prodotto è corretto">✓</button>
@@ -717,9 +776,7 @@ function renderPriceModal(data) {
                                 <tr class="${rowClass}" data-valid="${p.is_valid}" data-record-id="${p.id}">
                                     <td>${feedbackBtns}</td>
                                     <td>
-                                        <a href="${p.url}" target="_blank" class="text-decoration-none" title="${escapeHtml(p.title)}">
-                                            ${escapeHtml(p.title)}
-                                        </a>
+                                        ${p.url ? `<a href="${p.url}" target="_blank" class="text-decoration-none" title="${escapeHtml(p.title)}">${escapeHtml(p.title)}</a>` : escapeHtml(p.title)}
                                     </td>
                                     <td><strong>€${p.price.toFixed(2)}</strong></td>
                                     <td class="${diffClass}">${diff !== null ? `${diff > 0 ? '+' : ''}€${diff.toFixed(2)}` : '-'}</td>
@@ -921,6 +978,45 @@ async function saveMonitorEdit() {
     }
 }
 
+// Rigenera query con AI
+async function regenerateQuery() {
+    const monitorId = document.getElementById('edit-monitor-id').value;
+    const btn = event.target.closest('button');
+    const originalHtml = btn.innerHTML;
+    
+    btn.disabled = true;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm"></span>';
+    
+    try {
+        const res = await fetch(`/api/monitors/${monitorId}/regenerate-query`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' }
+        });
+        
+        const data = await res.json();
+        
+        if (res.ok) {
+            document.getElementById('edit-query').value = data.new_query;
+            btn.innerHTML = '<i class="bi bi-check"></i> OK';
+            btn.className = 'btn btn-success';
+            
+            setTimeout(() => {
+                btn.innerHTML = originalHtml;
+                btn.className = 'btn btn-outline-primary';
+                btn.disabled = false;
+            }, 2000);
+        } else {
+            alert(data.error || 'Errore');
+            btn.innerHTML = originalHtml;
+            btn.disabled = false;
+        }
+    } catch (e) {
+        alert('Errore: ' + e.message);
+        btn.innerHTML = originalHtml;
+        btn.disabled = false;
+    }
+}
+
 // Bulk edit
 function openBulkEdit() {
     document.getElementById('bulk-count').textContent = selectedMonitors.size;
@@ -982,20 +1078,10 @@ async function sendFeedback(recordId, isCorrect) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ is_correct: isCorrect })
         });
-        
-        if (res.ok) {
-            // Aggiorna UI
-            const row = document.querySelector(`tr[data-record-id="${recordId}"]`);
-            if (row) {
-                const feedbackCell = row.querySelector('td:first-child');
-                if (isCorrect) {
-                    feedbackCell.innerHTML = '<span class="badge bg-success">✓ Corretto</span>';
-                } else {
-                    feedbackCell.innerHTML = '<span class="badge bg-danger">✗ Errato</span>';
-                    row.classList.add('opacity-50');
-                }
-            }
-            console.log(`Feedback saved for record ${recordId}: ${isCorrect ? 'correct' : 'incorrect'}`);
+
+        if (res.ok && currentMonitorId) {
+            // Ricarica tutto il modale (stats, grafico, tabella) con dati aggiornati
+            await refreshPriceModal(currentMonitorId);
         }
     } catch (e) {
         console.error('Failed to send feedback:', e);
