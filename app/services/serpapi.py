@@ -131,7 +131,14 @@ class SerpAPIService:
             price = self._extract_price(item)
             if price is None:
                 continue
-            
+
+            # Google Shopping puo avere l'URL in diversi campi
+            url = item.get('link') or item.get('product_link') or ''
+
+            # Senza URL il risultato non e utile - skippa
+            if not url:
+                continue
+
             results.append({
                 'title': item.get('title', ''),
                 'price': price,
@@ -139,7 +146,7 @@ class SerpAPIService:
                 'seller_name': item.get('source', ''),
                 'seller_rating': item.get('rating'),
                 'reviews_count': item.get('reviews'),
-                'url': item.get('link', ''),
+                'url': url,
                 'image_url': item.get('thumbnail', ''),
                 'source': 'google_shopping',
             })
