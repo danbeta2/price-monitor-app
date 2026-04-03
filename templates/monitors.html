@@ -598,22 +598,31 @@ async function regenerateSelectedQueries() {
     btn.innerHTML = '<i class="bi bi-stars"></i> AI Query';
 }
 
+let currentMonitorId = null;
+
 async function viewPrices(monitorId) {
+    currentMonitorId = monitorId;
     const modal = new bootstrap.Modal(document.getElementById('priceModal'));
     const body = document.getElementById('price-modal-body');
-    
+
     body.innerHTML = '<div class="text-center py-5"><span class="spinner-border"></span></div>';
     modal.show();
-    
+
+    await refreshPriceModal(monitorId);
+}
+
+async function refreshPriceModal(monitorId) {
+    const body = document.getElementById('price-modal-body');
+
     const res = await fetch(`/api/monitors/${monitorId}/prices?show_all=true`);
     const data = await res.json();
-    
+
     body.innerHTML = renderPriceModal(data);
-    
+
     if (data.history && data.history.length > 0) {
         renderChart(data.history, data.your_price);
     }
-    
+
     const toggle = document.getElementById('showAllPrices');
     if (toggle) {
         toggle.addEventListener('change', function() {
@@ -1073,27 +1082,10 @@ async function sendFeedback(recordId, isCorrect) {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ is_correct: isCorrect })
         });
-        
-        if (res.ok) {
-            // Aggiorna UI con pulsanti che permettono di cambiare idea
-            const row = document.querySelector(`tr[data-record-id="${recordId}"]`);
-            if (row) {
-                const feedbackCell = row.querySelector('td:first-child');
-                if (isCorrect) {
-                    feedbackCell.innerHTML = `
-                        <button class="btn btn-sm btn-success py-0 px-1" disabled>✓</button>
-                        <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${recordId}, false)" title="Cambia in ERRATO">✗</button>
-                    `;
-                    row.classList.remove('opacity-50');
-                } else {
-                    feedbackCell.innerHTML = `
-                        <button class="btn btn-sm btn-outline-success py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${recordId}, true)" title="Cambia in CORRETTO">✓</button>
-                        <button class="btn btn-sm btn-danger py-0 px-1" disabled>✗</button>
-                    `;
-                    row.classList.add('opacity-50');
-                }
-            }
-            console.log(`Feedback saved for record ${recordId}: ${isCorrect ? 'correct' : 'incorrect'}`);
+
+        if (res.ok && currentMonitorId) {
+            // Ricarica tutto il modale (stats, grafico, tabella) con dati aggiornati
+            await refreshPriceModal(currentMonitorId);
         }
     } catch (e) {
         console.error('Failed to send feedback:', e);

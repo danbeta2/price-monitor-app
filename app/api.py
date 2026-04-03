@@ -546,10 +546,12 @@ def set_price_feedback(record_id):
     
     # Aggiorna il record
     record.user_feedback = is_correct
-    
-    # Se l'utente dice che è errato, marca come non valido
+
+    # Feedback aggiorna anche la validità del record
     if not is_correct:
         record.is_valid = False
+    else:
+        record.is_valid = True
     
     # Salva anche nel feedback storico per training Gemini
     monitor = record.monitor
