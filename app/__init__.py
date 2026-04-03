@@ -37,6 +37,17 @@ def create_app():
                         conn.commit()
                     except Exception:
                         pass  # Indice già esistente
+                # Aggiorna tolerance da 50 a 40 per monitor esistenti
+                try:
+                    result = conn.execute(text(
+                        "UPDATE monitors SET price_tolerance = 40 WHERE price_tolerance = 50"
+                    ))
+                    conn.commit()
+                    if result.rowcount > 0:
+                        print(f"[Migration] Updated {result.rowcount} monitors: tolerance 50% -> 40%")
+                except Exception:
+                    pass
+
                 # Pulisci record del proprio negozio dai competitor
                 import re
                 wc_url = app.config.get('WC_URL', '')
