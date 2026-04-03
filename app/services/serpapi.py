@@ -135,10 +135,6 @@ class SerpAPIService:
             # Google Shopping puo avere l'URL in diversi campi
             url = item.get('link') or item.get('product_link') or ''
 
-            # Senza URL il risultato non e utile - skippa
-            if not url:
-                continue
-
             results.append({
                 'title': item.get('title', ''),
                 'price': price,
