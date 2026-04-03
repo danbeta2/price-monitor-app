@@ -746,12 +746,18 @@ function renderPriceModal(data) {
                                                (p.source === 'google_web' ? '<span class="badge bg-info">W</span>' : 
                                                '<span class="badge bg-warning text-dark">E</span>');
                             
-                            // Feedback buttons
+                            // Feedback buttons (sempre cliccabili per cambiare idea)
                             let feedbackBtns = '';
                             if (p.user_feedback === true) {
-                                feedbackBtns = '<span class="badge bg-success">✓ Corretto</span>';
+                                feedbackBtns = `
+                                    <button class="btn btn-sm btn-success py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${p.id}, true)" title="Corretto (clicca per rimuovere)" disabled>✓</button>
+                                    <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${p.id}, false)" title="Cambia in ERRATO">✗</button>
+                                `;
                             } else if (p.user_feedback === false) {
-                                feedbackBtns = '<span class="badge bg-danger">✗ Errato</span>';
+                                feedbackBtns = `
+                                    <button class="btn btn-sm btn-outline-success py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${p.id}, true)" title="Cambia in CORRETTO">✓</button>
+                                    <button class="btn btn-sm btn-danger py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${p.id}, false)" title="Errato (clicca per rimuovere)" disabled>✗</button>
+                                `;
                             } else {
                                 feedbackBtns = `
                                     <button class="btn btn-sm btn-outline-success py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${p.id}, true)" title="Questo prodotto è corretto">✓</button>
@@ -1069,14 +1075,21 @@ async function sendFeedback(recordId, isCorrect) {
         });
         
         if (res.ok) {
-            // Aggiorna UI
+            // Aggiorna UI con pulsanti che permettono di cambiare idea
             const row = document.querySelector(`tr[data-record-id="${recordId}"]`);
             if (row) {
                 const feedbackCell = row.querySelector('td:first-child');
                 if (isCorrect) {
-                    feedbackCell.innerHTML = '<span class="badge bg-success">✓ Corretto</span>';
+                    feedbackCell.innerHTML = `
+                        <button class="btn btn-sm btn-success py-0 px-1" disabled>✓</button>
+                        <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${recordId}, false)" title="Cambia in ERRATO">✗</button>
+                    `;
+                    row.classList.remove('opacity-50');
                 } else {
-                    feedbackCell.innerHTML = '<span class="badge bg-danger">✗ Errato</span>';
+                    feedbackCell.innerHTML = `
+                        <button class="btn btn-sm btn-outline-success py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${recordId}, true)" title="Cambia in CORRETTO">✓</button>
+                        <button class="btn btn-sm btn-danger py-0 px-1" disabled>✗</button>
+                    `;
                     row.classList.add('opacity-50');
                 }
             }
