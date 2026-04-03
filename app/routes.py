@@ -1,5 +1,5 @@
 from flask import Blueprint, render_template, current_app
-from sqlalchemy import func, case
+from sqlalchemy import func
 
 main_bp = Blueprint('main', __name__)
 
@@ -33,7 +33,7 @@ def dashboard():
             continue
 
         your_price = m.product.price
-        tolerance_pct = m.price_tolerance if m.price_tolerance and m.price_tolerance > 0 else 50
+        tolerance_pct = m.price_tolerance if m.price_tolerance and m.price_tolerance > 0 else 40
         min_r = your_price * (1 - tolerance_pct / 100)
         max_r = your_price * (1 + tolerance_pct / 100)
 
@@ -67,15 +67,15 @@ def dashboard():
     }
 
     # Prodotti da tenere sotto controllo: troppo alti o troppo bassi vs mercato
-    price_too_high = []   # Tuo prezzo >15% sopra la media → rischi di non vendere
-    price_too_low = []    # Tuo prezzo >10% sotto la media → stai regalando margine
+    price_too_high = []   # Tuo prezzo >15% sopra la media
+    price_too_low = []    # Tuo prezzo >10% sotto la media
 
     for m in monitors_with_product:
         if not m.product or not m.product.price:
             continue
 
         your_price = m.product.price
-        tolerance_pct = m.price_tolerance if m.price_tolerance and m.price_tolerance > 0 else 50
+        tolerance_pct = m.price_tolerance if m.price_tolerance and m.price_tolerance > 0 else 40
         min_r = your_price * (1 - tolerance_pct / 100)
         max_r = your_price * (1 + tolerance_pct / 100)
 
