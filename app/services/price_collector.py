@@ -272,8 +272,7 @@ class PriceCollector:
                     return False
 
         # ========== 1. FILTRO PREZZO (usa tolerance del monitor) ==========
-        # tolerance e la percentuale configurata dall'utente (default 50%)
-        tolerance_pct = tolerance if tolerance and tolerance > 0 else 50
+        tolerance_pct = tolerance if tolerance and tolerance > 0 else 40
         if your_price and your_price > 0:
             min_price = your_price * (1 - tolerance_pct / 100)
             max_price = your_price * (1 + tolerance_pct / 100)
