@@ -254,20 +254,30 @@ def get_monitors():
         data = m.to_dict()
         data['product'] = m.product.to_dict() if m.product else None
         
-        # Prima cerca tra i validi
-        best_price = PriceRecord.query.filter_by(
-            monitor_id=m.id, is_valid=True
+        # Calcola range ragionevole per escludere outlier (±35%)
+        your_price = m.product.price if m.product else None
+        min_reasonable = your_price * 0.65 if your_price else 0.01
+        max_reasonable = your_price * 1.35 if your_price else 100000
+
+        # Prima cerca tra i validi nel range di prezzo ragionevole
+        best_price = PriceRecord.query.filter(
+            PriceRecord.monitor_id == m.id,
+            PriceRecord.is_valid == True,
+            PriceRecord.price >= min_reasonable,
+            PriceRecord.price <= max_reasonable
         ).order_by(PriceRecord.price.asc()).first()
-        
-        # Se non ci sono validi, prendi comunque il miglior prezzo (per riferimento)
+
+        # Se non ci sono validi nel range, prendi comunque il miglior prezzo nel range
         if not best_price:
-            best_price = PriceRecord.query.filter_by(
-                monitor_id=m.id
+            best_price = PriceRecord.query.filter(
+                PriceRecord.monitor_id == m.id,
+                PriceRecord.price >= min_reasonable,
+                PriceRecord.price <= max_reasonable
             ).order_by(PriceRecord.price.asc()).first()
             data['best_price_unvalidated'] = True
         else:
             data['best_price_unvalidated'] = False
-        
+
         data['best_price'] = best_price.price if best_price else None
         data['best_seller'] = best_price.seller_name if best_price else None
         
