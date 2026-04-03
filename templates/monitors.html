@@ -645,12 +645,13 @@ function renderPriceModal(data) {
         let positionBadge = '';
         
         if (yourPrice && avgPrice) {
-            if (yourPrice <= (data.stats.min_price || 0) * 1.05) {
-                positionBadge = '<span class="badge bg-success">🏆 Miglior prezzo!</span>';
+            const minPrice = data.stats.min_price || 0;
+            if (yourPrice <= minPrice) {
+                positionBadge = '<span class="badge bg-success">Miglior prezzo!</span>';
             } else if (yourPrice < avgPrice) {
-                positionBadge = '<span class="badge bg-info">✓ Sotto la media</span>';
-            } else if (yourPrice > avgPrice * 1.1) {
-                positionBadge = '<span class="badge bg-warning">⚠️ Sopra la media</span>';
+                positionBadge = '<span class="badge bg-info">Sotto la media</span>';
+            } else {
+                positionBadge = '<span class="badge bg-warning">Sopra la media</span>';
             }
         }
         
