@@ -76,6 +76,8 @@ class PriceRecord(db.Model):
     url = db.Column(db.String(2000))
     source = db.Column(db.String(50))
     is_valid = db.Column(db.Boolean, default=True)
+    # Feedback utente: None=non valutato, True=corretto, False=errato
+    user_feedback = db.Column(db.Boolean, nullable=True, default=None)
     fetched_at = db.Column(db.DateTime, default=datetime.utcnow)
     
     def to_dict(self):
@@ -89,5 +91,30 @@ class PriceRecord(db.Model):
             'url': self.url,
             'source': self.source,
             'is_valid': self.is_valid,
+            'user_feedback': self.user_feedback,
             'fetched_at': self.fetched_at.isoformat() if self.fetched_at else None,
+        }
+
+
+class ProductFeedback(db.Model):
+    """Storico feedback per training Gemini - esempi di match corretti/errati"""
+    __tablename__ = 'product_feedback'
+    
+    id = db.Column(db.Integer, primary_key=True)
+    search_query = db.Column(db.String(500), nullable=False)  # Query originale
+    found_title = db.Column(db.String(500), nullable=False)   # Titolo prodotto trovato
+    found_price = db.Column(db.Float)                          # Prezzo trovato
+    your_price = db.Column(db.Float)                           # Tuo prezzo di riferimento
+    is_correct_match = db.Column(db.Boolean, nullable=False)   # True=match corretto, False=match errato
+    created_at = db.Column(db.DateTime, default=datetime.utcnow)
+    
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'search_query': self.search_query,
+            'found_title': self.found_title,
+            'found_price': self.found_price,
+            'your_price': self.your_price,
+            'is_correct_match': self.is_correct_match,
+            'created_at': self.created_at.isoformat() if self.created_at else None,
         }

@@ -1,6 +1,6 @@
 from flask import Blueprint, jsonify, request
 from app import db
-from app.models import Product, Monitor, PriceRecord
+from app.models import Product, Monitor, PriceRecord, ProductFeedback
 from app.services.woocommerce import WooCommerceService
 from app.services.price_collector import PriceCollector
 from sqlalchemy import func
@@ -448,6 +448,56 @@ def collect_prices(monitor_id):
     collector = PriceCollector()
     result = collector.collect_for_monitor(monitor)
     return jsonify(result)
+
+@api_bp.route('/price-records/<int:record_id>/feedback', methods=['POST'])
+def set_price_feedback(record_id):
+    """Salva feedback utente su un price record (corretto/errato)"""
+    record = PriceRecord.query.get_or_404(record_id)
+    data = request.get_json(silent=True) or {}
+    
+    is_correct = data.get('is_correct')  # True = match corretto, False = match errato
+    
+    if is_correct is None:
+        return jsonify({'error': 'is_correct required'}), 400
+    
+    # Aggiorna il record
+    record.user_feedback = is_correct
+    
+    # Se l'utente dice che è errato, marca come non valido
+    if not is_correct:
+        record.is_valid = False
+    
+    # Salva anche nel feedback storico per training Gemini
+    monitor = record.monitor
+    feedback = ProductFeedback(
+        search_query=monitor.search_query,
+        found_title=record.title,
+        found_price=record.price,
+        your_price=monitor.product.price if monitor.product else None,
+        is_correct_match=is_correct
+    )
+    db.session.add(feedback)
+    db.session.commit()
+    
+    return jsonify({
+        'message': 'Feedback salvato',
+        'record_id': record_id,
+        'is_correct': is_correct,
+        'is_valid': record.is_valid
+    })
+
+@api_bp.route('/feedback/stats')
+def get_feedback_stats():
+    """Statistiche feedback per debug"""
+    total = ProductFeedback.query.count()
+    correct = ProductFeedback.query.filter_by(is_correct_match=True).count()
+    incorrect = ProductFeedback.query.filter_by(is_correct_match=False).count()
+    
+    return jsonify({
+        'total': total,
+        'correct': correct,
+        'incorrect': incorrect
+    })
 
 @api_bp.route('/monitors/<int:monitor_id>/prices')
 def get_monitor_prices(monitor_id):

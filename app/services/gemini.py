@@ -13,7 +13,7 @@ class GeminiService:
     _total_requests = 0
     _errors_count = 0
     
-    # Limiti gratuiti Gemini 2.0 Flash
+    # Limiti gratuiti Gemini 1.5 Flash
     DAILY_LIMIT = 1500  # richieste/giorno gratis
     RPM_LIMIT = 15  # richieste/minuto
     
@@ -66,6 +66,34 @@ class GeminiService:
         GeminiService._requests_today += 1
         GeminiService._total_requests += 1
     
+    def _get_feedback_examples(self, search_query, limit=6):
+        """Recupera esempi di feedback per few-shot learning"""
+        try:
+            from app.models import ProductFeedback
+            
+            # Prendi gli ultimi N feedback (metà corretti, metà errati)
+            correct = ProductFeedback.query.filter_by(is_correct_match=True)\
+                .order_by(ProductFeedback.created_at.desc()).limit(limit // 2).all()
+            incorrect = ProductFeedback.query.filter_by(is_correct_match=False)\
+                .order_by(ProductFeedback.created_at.desc()).limit(limit // 2).all()
+            
+            examples = []
+            
+            if correct:
+                examples.append("\nESEMPI DI MATCH CORRETTI (validati dall'utente):")
+                for fb in correct:
+                    examples.append(f"✅ Query: \"{fb.search_query[:50]}\" → \"{fb.found_title[:60]}\" €{fb.found_price:.2f}")
+            
+            if incorrect:
+                examples.append("\nESEMPI DI MATCH ERRATI (rifiutati dall'utente):")
+                for fb in incorrect:
+                    examples.append(f"❌ Query: \"{fb.search_query[:50]}\" → \"{fb.found_title[:60]}\" €{fb.found_price:.2f}")
+            
+            return "\n".join(examples) if examples else ""
+        except Exception as e:
+            print(f"[Gemini] Error getting feedback: {e}")
+            return ""
+    
     def validate_product_match(self, searched_product, found_title, found_price, your_price=None):
         """
         Usa Gemini AI per validare se un prodotto trovato corrisponde a quello cercato.
@@ -82,6 +110,9 @@ class GeminiService:
         
         # Costruisci il prompt
         price_context = f"\nPrezzo atteso: circa €{your_price:.2f}" if your_price else ""
+        
+        # Aggiungi esempi dal feedback utente (few-shot learning)
+        feedback_examples = self._get_feedback_examples(searched_product)
         
         prompt = f"""Sei un esperto di prodotti TCG sealed (Pokémon, Magic, Yu-Gi-Oh, Lorcana).
 
@@ -106,6 +137,7 @@ CRITERI DI VALIDITÀ (TUTTI devono essere soddisfatti):
 
 4. ESCLUSIONI AUTOMATICHE:
    - Carte singole, buste singole, lotti, usati, accessori → NON_VALIDO
+{feedback_examples}
 
 Rispondi SOLO:
 VALIDO
@@ -184,6 +216,9 @@ NON_VALIDO:motivo"""
         
         price_context = f"\nPrezzo atteso: circa €{your_price:.2f}" if your_price else ""
         
+        # Aggiungi esempi dal feedback utente
+        feedback_examples = self._get_feedback_examples(searched_product)
+        
         prompt = f"""Sei un esperto di prodotti TCG sealed (Pokémon, Magic, Yu-Gi-Oh, Lorcana).
 
 PRODOTTO CERCATO: {searched_product}{price_context}
@@ -198,6 +233,7 @@ CRITERI: Un prodotto è VALIDO solo se:
 - STESSO personaggio (se specificato)
 
 NON_VALIDO se: carta singola, busta singola, lotto, usato, espansione diversa, tipo diverso.
+{feedback_examples}
 
 Rispondi con UNA RIGA per prodotto:
 1:VALIDO oppure 1:NON_VALIDO

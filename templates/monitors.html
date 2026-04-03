@@ -683,35 +683,48 @@ function renderPriceModal(data) {
                 <table class="table table-sm table-hover">
                     <thead class="table-light sticky-top">
                         <tr>
-                            <th style="width: 40px;"></th>
-                            <th style="min-width: 350px;">Titolo</th>
+                            <th style="width: 80px;">Feedback</th>
+                            <th style="min-width: 320px;">Titolo</th>
                             <th style="width: 90px;">Prezzo</th>
                             <th style="width: 90px;">vs Tuo</th>
                             <th style="width: 50px;">Fonte</th>
-                            <th style="width: 120px;">Venditore</th>
+                            <th style="width: 100px;">Venditore</th>
                         </tr>
                     </thead>
                     <tbody>
                         ${data.prices.map(p => {
                             const diff = data.your_price ? (p.price - data.your_price) : null;
                             const diffClass = diff !== null ? (diff < 0 ? 'text-success' : (diff > 0 ? 'text-danger' : '')) : '';
-                            const validBadge = p.is_valid ? '<span class="badge bg-success">✓</span>' : '<span class="badge bg-secondary">✗</span>';
                             const rowClass = p.is_valid ? '' : 'opacity-50';
                             const sourceBadge = p.source === 'google_shopping' ? '<span class="badge bg-primary">G</span>' : 
                                                (p.source === 'google_web' ? '<span class="badge bg-info">W</span>' : 
                                                '<span class="badge bg-warning text-dark">E</span>');
+                            
+                            // Feedback buttons
+                            let feedbackBtns = '';
+                            if (p.user_feedback === true) {
+                                feedbackBtns = '<span class="badge bg-success">✓ Corretto</span>';
+                            } else if (p.user_feedback === false) {
+                                feedbackBtns = '<span class="badge bg-danger">✗ Errato</span>';
+                            } else {
+                                feedbackBtns = `
+                                    <button class="btn btn-sm btn-outline-success py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${p.id}, true)" title="Questo prodotto è corretto">✓</button>
+                                    <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${p.id}, false)" title="Questo prodotto è ERRATO">✗</button>
+                                `;
+                            }
+                            
                             return `
-                                <tr class="${rowClass}" data-valid="${p.is_valid}" style="cursor: pointer;" onclick="window.open('${p.url}', '_blank')">
-                                    <td>${validBadge}</td>
+                                <tr class="${rowClass}" data-valid="${p.is_valid}" data-record-id="${p.id}">
+                                    <td>${feedbackBtns}</td>
                                     <td>
-                                        <a href="${p.url}" target="_blank" class="text-decoration-none" title="${escapeHtml(p.title)}" onclick="event.stopPropagation();">
+                                        <a href="${p.url}" target="_blank" class="text-decoration-none" title="${escapeHtml(p.title)}">
                                             ${escapeHtml(p.title)}
                                         </a>
                                     </td>
                                     <td><strong>€${p.price.toFixed(2)}</strong></td>
                                     <td class="${diffClass}">${diff !== null ? `${diff > 0 ? '+' : ''}€${diff.toFixed(2)}` : '-'}</td>
                                     <td>${sourceBadge}</td>
-                                    <td class="text-truncate" style="max-width: 120px;">${escapeHtml(p.seller_name || '-')}</td>
+                                    <td class="text-truncate" style="max-width: 100px;">${escapeHtml(p.seller_name || '-')}</td>
                                 </tr>
                             `;
                         }).join('')}
@@ -959,6 +972,34 @@ function escapeHtml(text) {
     const div = document.createElement('div');
     div.textContent = text;
     return div.innerHTML;
+}
+
+// Feedback per training AI
+async function sendFeedback(recordId, isCorrect) {
+    try {
+        const res = await fetch(`/api/price-records/${recordId}/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_correct: isCorrect })
+        });
+        
+        if (res.ok) {
+            // Aggiorna UI
+            const row = document.querySelector(`tr[data-record-id="${recordId}"]`);
+            if (row) {
+                const feedbackCell = row.querySelector('td:first-child');
+                if (isCorrect) {
+                    feedbackCell.innerHTML = '<span class="badge bg-success">✓ Corretto</span>';
+                } else {
+                    feedbackCell.innerHTML = '<span class="badge bg-danger">✗ Errato</span>';
+                    row.classList.add('opacity-50');
+                }
+            }
+            console.log(`Feedback saved for record ${recordId}: ${isCorrect ? 'correct' : 'incorrect'}`);
+        }
+    } catch (e) {
+        console.error('Failed to send feedback:', e);
+    }
 }
 </script>
 {% endblock %}
