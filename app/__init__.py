@@ -25,6 +25,18 @@ def create_app():
                     print("[Migration] Added user_feedback column to price_records")
                 except Exception:
                     pass  # Colonna già esistente
+
+                # Crea indici per performance query price_records
+                for idx_name, idx_sql in [
+                    ('idx_price_monitor_valid', 'CREATE INDEX IF NOT EXISTS idx_price_monitor_valid ON price_records (monitor_id, is_valid)'),
+                    ('idx_price_monitor_date', 'CREATE INDEX IF NOT EXISTS idx_price_monitor_date ON price_records (monitor_id, fetched_at)'),
+                    ('idx_price_monitor_valid_price', 'CREATE INDEX IF NOT EXISTS idx_price_monitor_valid_price ON price_records (monitor_id, is_valid, price)'),
+                ]:
+                    try:
+                        conn.execute(text(idx_sql))
+                        conn.commit()
+                    except Exception:
+                        pass  # Indice già esistente
         except Exception as e:
             print(f"[Migration] Warning: {e}")
     

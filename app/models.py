@@ -65,7 +65,12 @@ class Monitor(db.Model):
 
 class PriceRecord(db.Model):
     __tablename__ = 'price_records'
-    
+    __table_args__ = (
+        db.Index('idx_price_monitor_valid', 'monitor_id', 'is_valid'),
+        db.Index('idx_price_monitor_date', 'monitor_id', 'fetched_at'),
+        db.Index('idx_price_monitor_valid_price', 'monitor_id', 'is_valid', 'price'),
+    )
+
     id = db.Column(db.Integer, primary_key=True)
     monitor_id = db.Column(db.Integer, db.ForeignKey('monitors.id'), nullable=False)
     title = db.Column(db.String(500), nullable=False)

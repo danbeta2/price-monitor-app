@@ -142,48 +142,52 @@ class PriceCollector:
         today = datetime.utcnow().date()
         
         # STEP 1: Pre-filtra con regole base (prezzo, keywords negativi)
-        pre_filtered = []
-        for item in all_items:
-            basic_valid = self._validate_result(
-                item, your_price, monitor.price_tolerance, 
+        # Ogni item riceve un indice globale per tracciamento AI
+        for idx, item in enumerate(all_items):
+            item['_global_idx'] = idx
+            item['_basic_valid'] = self._validate_result(
+                item, your_price, monitor.price_tolerance,
                 monitor.search_query, language
             )
-            item['_basic_valid'] = basic_valid
-            pre_filtered.append(item)
-        
+
         # STEP 2: Validazione AI con Gemini (solo se abilitato e configurato)
-        items_for_ai = [item for item in pre_filtered if item['_basic_valid']]
-        
-        ai_results = {}
+        items_for_ai = [item for item in all_items if item['_basic_valid']]
+
+        # Mappa: global_idx -> (is_valid, reason) da Gemini
+        ai_decision = {}
         use_ai = PriceCollector._use_ai_validation and self.gemini.is_configured() and self.gemini.can_make_request()
-        
+
         if items_for_ai and use_ai:
             print(f"[Gemini] Validating {len(items_for_ai)} items for: {monitor.search_query[:50]}...")
-            ai_results = self.gemini.batch_validate(
-                monitor.search_query, 
-                items_for_ai, 
+            batch_results = self.gemini.batch_validate(
+                monitor.search_query,
+                items_for_ai,
                 your_price,
-                max_items=20  # Limita per evitare prompt troppo lunghi
+                max_items=20
             )
+            # Mappa i risultati batch (indice locale) -> indice globale
+            for local_idx, (is_valid, reason) in batch_results.items():
+                if local_idx < len(items_for_ai):
+                    global_idx = items_for_ai[local_idx]['_global_idx']
+                    ai_decision[global_idx] = (is_valid, reason)
         elif items_for_ai and not use_ai:
             print(f"[PriceCollector] AI validation skipped (disabled or no credits)")
-        
+
         # STEP 3: Salva risultati
-        ai_index = 0
-        for item in pre_filtered:
+        for item in all_items:
             basic_valid = item.pop('_basic_valid', True)
-            
+            global_idx = item.pop('_global_idx', -1)
+
             # Determina validità finale
             if not basic_valid:
                 is_valid = False
-            elif item in items_for_ai and ai_index in ai_results:
-                is_valid, reason = ai_results.get(ai_index, (True, ""))
+            elif global_idx in ai_decision:
+                is_valid, reason = ai_decision[global_idx]
                 if is_valid:
                     results['ai_validated'] += 1
                 else:
                     results['ai_rejected'] += 1
                     print(f"[Gemini] Rejected: {item.get('title', '')[:60]}... - {reason}")
-                ai_index += 1
             else:
                 is_valid = basic_valid
             
@@ -237,12 +241,12 @@ class PriceCollector:
         query_lower = search_query.lower()
         price = item.get('price', 0)
         
-        # ========== 1. FILTRO PREZZO (±35%) ==========
-        # Range più ampio per catturare offerte e variazioni di mercato
-        # Gemini farà il filtro fine sui prodotti che passano
+        # ========== 1. FILTRO PREZZO (usa tolerance del monitor) ==========
+        # tolerance e la percentuale configurata dall'utente (default 50%)
+        tolerance_pct = tolerance if tolerance and tolerance > 0 else 50
         if your_price and your_price > 0:
-            min_price = your_price * 0.65  # Non meno del 65%
-            max_price = your_price * 1.35  # Non più del 135%
+            min_price = your_price * (1 - tolerance_pct / 100)
+            max_price = your_price * (1 + tolerance_pct / 100)
             if not (min_price <= price <= max_price):
                 return False
         

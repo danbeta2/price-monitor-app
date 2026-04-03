@@ -45,18 +45,13 @@ def get_categories():
 
 @api_bp.route('/debug/config')
 def debug_config():
-    """Endpoint di debug per verificare le configurazioni"""
+    """Stato configurazione API (solo booleani, nessuna credenziale)"""
     from flask import current_app
     return jsonify({
-        'wc_url': bool(current_app.config.get('WC_URL')),
-        'wc_url_value': (current_app.config.get('WC_URL', '')[:30] + '...') if current_app.config.get('WC_URL') else None,
-        'wc_key': bool(current_app.config.get('WC_CONSUMER_KEY')),
-        'wc_key_prefix': current_app.config.get('WC_CONSUMER_KEY', '')[:10] + '...' if current_app.config.get('WC_CONSUMER_KEY') else None,
-        'wc_secret': bool(current_app.config.get('WC_CONSUMER_SECRET')),
-        'serpapi': bool(current_app.config.get('SERPAPI_KEY')),
-        'ebay_id': bool(current_app.config.get('EBAY_CLIENT_ID')),
-        'ebay_secret': bool(current_app.config.get('EBAY_CLIENT_SECRET')),
-        'gemini': bool(current_app.config.get('GEMINI_API_KEY')),
+        'wc_configured': bool(current_app.config.get('WC_URL') and current_app.config.get('WC_CONSUMER_KEY')),
+        'serpapi_configured': bool(current_app.config.get('SERPAPI_KEY')),
+        'ebay_configured': bool(current_app.config.get('EBAY_CLIENT_ID') and current_app.config.get('EBAY_CLIENT_SECRET')),
+        'gemini_configured': bool(current_app.config.get('GEMINI_API_KEY')),
     })
 
 @api_bp.route('/api-status')
@@ -155,17 +150,23 @@ def sync_products():
         page = 1
         max_pages = 10  # Limite sicurezza: max 500 prodotti
         
+        errors = []
         while page <= max_pages:
             print(f"[Sync] Fetching page {page} (in_stock_only=True)...")
             batch = wc.get_products(page=page, per_page=50, in_stock_only=True)
-            
-            if batch is None and page == 1:
-                return jsonify({
-                    'error': 'Errore connessione WooCommerce',
-                    'details': wc.last_error or 'Impossibile connettersi',
-                    'synced': 0
-                }), 500
-            
+
+            if batch is None:
+                error_msg = f"Errore pagina {page}: {wc.last_error or 'Connessione fallita'}"
+                print(f"[Sync] {error_msg}")
+                if page == 1:
+                    return jsonify({
+                        'error': 'Errore connessione WooCommerce',
+                        'details': wc.last_error or 'Impossibile connettersi',
+                        'synced': 0
+                    }), 500
+                errors.append(error_msg)
+                break
+
             if not batch:
                 break
             
@@ -223,13 +224,17 @@ def sync_products():
             db.session.commit()
             print(f"[Sync] Removed {removed} products (out-of-stock or single cards)")
         
-        return jsonify({
+        result = {
             'synced': synced,
             'skipped_single_cards': skipped_single_cards,
             'deleted_singles': deleted_singles,
             'removed': removed,
             'message': f'Sincronizzati {synced} prodotti sealed' + (f', eliminate {deleted_singles} carte singole' if deleted_singles > 0 else '') + (f', rimossi {removed}' if removed > 0 else '')
-        })
+        }
+        if errors:
+            result['warnings'] = errors
+            result['message'] += f' (ATTENZIONE: {len(errors)} errori durante il sync)'
+        return jsonify(result)
         
     except Exception as e:
         db.session.rollback()
@@ -244,49 +249,66 @@ def sync_products():
 
 @api_bp.route('/monitors', methods=['GET'])
 def get_monitors():
-    monitors = Monitor.query.all()
+    from sqlalchemy.orm import joinedload
+    from sqlalchemy import case
+
+    # Carica monitor con prodotti in una sola query (no N+1)
+    monitors = Monitor.query.options(joinedload(Monitor.product)).all()
+
+    # Precalcola stats aggregate per tutti i monitor in 1 query
+    record_stats = db.session.query(
+        PriceRecord.monitor_id,
+        func.count(PriceRecord.id).label('total_records'),
+        func.count(case((PriceRecord.is_valid == True, 1))).label('valid_records'),
+    ).group_by(PriceRecord.monitor_id).all()
+
+    stats_map = {s.monitor_id: {'total': s.total_records, 'valid': s.valid_records} for s in record_stats}
+
+    # Precalcola best_price per ogni monitor (solo validi)
+    # Subquery: prezzo minimo valido per monitor
+    best_prices_q = db.session.query(
+        PriceRecord.monitor_id,
+        func.min(PriceRecord.price).label('min_price'),
+    ).filter(
+        PriceRecord.is_valid == True,
+    ).group_by(PriceRecord.monitor_id).all()
+
+    best_price_map = {bp.monitor_id: bp.min_price for bp in best_prices_q}
+
     result = []
-    
     for m in monitors:
-        # Salta carte singole - non devono apparire mai
         if m.product and is_single_card(m.product.name):
             continue
+
         data = m.to_dict()
         data['product'] = m.product.to_dict() if m.product else None
-        
-        # Calcola range ragionevole per escludere outlier (±35%)
+
         your_price = m.product.price if m.product else None
-        min_reasonable = your_price * 0.65 if your_price else 0.01
-        max_reasonable = your_price * 1.35 if your_price else 100000
+        tolerance_pct = m.price_tolerance if m.price_tolerance and m.price_tolerance > 0 else 50
+        min_reasonable = your_price * (1 - tolerance_pct / 100) if your_price else 0.01
+        max_reasonable = your_price * (1 + tolerance_pct / 100) if your_price else 100000
 
-        # Prima cerca tra i validi nel range di prezzo ragionevole
-        best_price = PriceRecord.query.filter(
-            PriceRecord.monitor_id == m.id,
-            PriceRecord.is_valid == True,
-            PriceRecord.price >= min_reasonable,
-            PriceRecord.price <= max_reasonable
-        ).order_by(PriceRecord.price.asc()).first()
-
-        # Se non ci sono validi nel range, prendi comunque il miglior prezzo nel range
-        if not best_price:
-            best_price = PriceRecord.query.filter(
+        # Best price dal pre-calcolo, filtrato per range ragionevole
+        raw_best = best_price_map.get(m.id)
+        if raw_best and min_reasonable <= raw_best <= max_reasonable:
+            data['best_price'] = raw_best
+            # Recupera seller solo per il best price (1 query solo se serve)
+            best_record = PriceRecord.query.filter(
                 PriceRecord.monitor_id == m.id,
-                PriceRecord.price >= min_reasonable,
-                PriceRecord.price <= max_reasonable
-            ).order_by(PriceRecord.price.asc()).first()
-            data['best_price_unvalidated'] = True
+                PriceRecord.is_valid == True,
+                PriceRecord.price == raw_best,
+            ).first()
+            data['best_seller'] = best_record.seller_name if best_record else None
         else:
-            data['best_price_unvalidated'] = False
+            data['best_price'] = None
+            data['best_seller'] = None
 
-        data['best_price'] = best_price.price if best_price else None
-        data['best_seller'] = best_price.seller_name if best_price else None
-        
-        # Conta record totali e validi
-        data['total_records'] = PriceRecord.query.filter_by(monitor_id=m.id).count()
-        data['valid_records'] = PriceRecord.query.filter_by(monitor_id=m.id, is_valid=True).count()
-        
+        s = stats_map.get(m.id, {'total': 0, 'valid': 0})
+        data['total_records'] = s['total']
+        data['valid_records'] = s['valid']
+
         result.append(data)
-    
+
     return jsonify({'monitors': result})
 
 @api_bp.route('/monitors', methods=['POST'])
@@ -602,11 +624,11 @@ def get_monitor_prices(monitor_id):
     
     # Prezzo di riferimento per filtrare outlier
     your_price = monitor.product.price if monitor.product else None
-    
-    # Calcola range ragionevole per escludere outlier
-    # Range ±35%: se il tuo prezzo è €100, accettiamo da €65 a €135
-    min_reasonable = your_price * 0.65 if your_price else 0.01
-    max_reasonable = your_price * 1.35 if your_price else 100000
+
+    # Usa la tolerance configurata dal monitor
+    tolerance_pct = monitor.price_tolerance if monitor.price_tolerance and monitor.price_tolerance > 0 else 50
+    min_reasonable = your_price * (1 - tolerance_pct / 100) if your_price else 0.01
+    max_reasonable = your_price * (1 + tolerance_pct / 100) if your_price else 100000
     
     # Get prices - tutti o solo validi
     query = PriceRecord.query.filter_by(monitor_id=monitor_id)

@@ -416,9 +416,6 @@ function renderMonitors() {
         }
         
         let priceNote = '';
-        if (m.best_price_unvalidated) {
-            priceNote = '<br><small class="text-warning">⚠️ non validato</small>';
-        }
         
         const recordsInfo = m.total_records > 0 ? 
             `<small class="text-muted">${m.valid_records}/${m.total_records} validi</small>` : 
