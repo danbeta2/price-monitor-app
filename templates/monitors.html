@@ -718,33 +718,56 @@ function renderPriceModal(data) {
                 </div>
             </div>
             <div class="row mb-4 g-2">
-                <div class="col-6 col-md-2">
-                    <div class="text-center p-2 bg-light rounded">
-                        <div class="h5 text-success mb-0">€${(data.stats.min_price || 0).toFixed(2)}</div>
-                        <small class="text-muted">Min</small>
+                <div class="col-4">
+                    <div class="text-center p-3 bg-light rounded">
+                        <div class="h5 text-success mb-1">€${(data.stats.min_price || 0).toFixed(2)}</div>
+                        <small class="text-muted d-block">Min</small>
+                        ${yourPrice ? (() => {
+                            const d = yourPrice - (data.stats.min_price || 0);
+                            const pct = data.stats.min_price > 0 ? ((d / data.stats.min_price) * 100).toFixed(1) : 0;
+                            return d > 0
+                                ? `<small class="text-danger fw-bold">+€${d.toFixed(2)} (+${pct}%)</small>`
+                                : `<small class="text-success fw-bold">€${d.toFixed(2)} (${pct}%)</small>`;
+                        })() : ''}
                     </div>
                 </div>
-                <div class="col-6 col-md-2">
-                    <div class="text-center p-2 bg-light rounded">
-                        <div class="h5 mb-0">€${(data.stats.avg_price || 0).toFixed(2)}</div>
-                        <small class="text-muted">Media</small>
+                <div class="col-4">
+                    <div class="text-center p-3 bg-light rounded">
+                        <div class="h5 mb-1">€${(data.stats.avg_price || 0).toFixed(2)}</div>
+                        <small class="text-muted d-block">Media</small>
+                        ${yourPrice ? (() => {
+                            const d = yourPrice - (data.stats.avg_price || 0);
+                            const pct = data.stats.avg_price > 0 ? ((d / data.stats.avg_price) * 100).toFixed(1) : 0;
+                            return d > 0
+                                ? `<small class="text-danger fw-bold">+€${d.toFixed(2)} (+${pct}%)</small>`
+                                : `<small class="text-success fw-bold">€${d.toFixed(2)} (${pct}%)</small>`;
+                        })() : ''}
                     </div>
                 </div>
-                <div class="col-6 col-md-2">
-                    <div class="text-center p-2 bg-light rounded">
-                        <div class="h5 text-danger mb-0">€${(data.stats.max_price || 0).toFixed(2)}</div>
-                        <small class="text-muted">Max</small>
+                <div class="col-4">
+                    <div class="text-center p-3 bg-light rounded">
+                        <div class="h5 text-danger mb-1">€${(data.stats.max_price || 0).toFixed(2)}</div>
+                        <small class="text-muted d-block">Max</small>
+                        ${yourPrice ? (() => {
+                            const d = yourPrice - (data.stats.max_price || 0);
+                            const pct = data.stats.max_price > 0 ? ((d / data.stats.max_price) * 100).toFixed(1) : 0;
+                            return d < 0
+                                ? `<small class="text-success fw-bold">€${d.toFixed(2)} (${pct}%)</small>`
+                                : `<small class="text-danger fw-bold">+€${d.toFixed(2)} (+${pct}%)</small>`;
+                        })() : ''}
                     </div>
                 </div>
-                <div class="col-6 col-md-3">
+            </div>
+            <div class="row mb-4 g-2">
+                <div class="col-6">
                     <div class="text-center p-2 bg-light rounded">
-                        <div class="h5 mb-0">${data.stats.total || 0}</div>
+                        <div class="h6 mb-0">${data.stats.total || 0}</div>
                         <small class="text-muted">Prezzi rilevati</small>
                     </div>
                 </div>
-                <div class="col-12 col-md-3">
+                <div class="col-6">
                     <div class="text-center p-2 bg-light rounded">
-                        <div class="h5 mb-0">${data.stats.sellers || 0}</div>
+                        <div class="h6 mb-0">${data.stats.sellers || 0}</div>
                         <small class="text-muted">Venditori</small>
                     </div>
                 </div>
@@ -1196,9 +1219,23 @@ async function sendFeedback(recordId, isCorrect) {
             body: JSON.stringify({ is_correct: isCorrect })
         });
 
-        if (res.ok && currentMonitorId) {
-            // Ricarica tutto il modale (stats, grafico, tabella) con dati aggiornati
-            await refreshPriceModal(currentMonitorId);
+        if (res.ok) {
+            // Aggiorna solo i bottoni nella riga, senza ricaricare il modale
+            const row = document.querySelector(`tr[data-record-id="${recordId}"]`);
+            if (row) {
+                const td = row.querySelector('td:first-child');
+                if (isCorrect) {
+                    td.innerHTML = `
+                        <button class="btn btn-sm btn-success py-0 px-1" disabled>✓</button>
+                        <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${recordId}, false)" title="Cambia in ERRATO">✗</button>
+                    `;
+                } else {
+                    td.innerHTML = `
+                        <button class="btn btn-sm btn-outline-success py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${recordId}, true)" title="Cambia in CORRETTO">✓</button>
+                        <button class="btn btn-sm btn-danger py-0 px-1" disabled>✗</button>
+                    `;
+                }
+            }
         }
     } catch (e) {
         console.error('Failed to send feedback:', e);

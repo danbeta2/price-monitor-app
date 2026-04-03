@@ -206,6 +206,10 @@ CRITERI DI VALIDITÀ (TUTTI devono essere soddisfatti):
 1. TIPO PRODOTTO IDENTICO:
    - Display/Box (36 buste) ≠ Bundle (6 buste) ≠ ETB ≠ Tin ≠ Blister (3 buste) ≠ Collection
    - Il NUMERO di buste DEVE corrispondere esattamente
+   - SINONIMI TIPO PRODOTTO (sono lo STESSO prodotto):
+     * "Set Allenatore Fuoriclasse" = "ETB" = "Elite Trainer Box"
+     * "Display" = "Booster Box"
+     * "Collezione Allenatore Fuoriclasse" = "ETB"
 
 2. ESPANSIONE/SET IDENTICO:
    - "Scarlatto e Violetto" ≠ "Fiamme Ossidiana" ≠ "Destini di Paldea"
@@ -311,6 +315,10 @@ CRITERI STRETTI - Un prodotto è VALIDO SOLO se soddisfa TUTTI questi criteri:
 1. STESSO TIPO PRODOTTO ESATTO:
    - Display/Box 36 buste ≠ Bundle 6 buste ≠ ETB ≠ Tin ≠ Blister ≠ Collection ≠ UPC
    - Il numero di buste DEVE corrispondere esattamente
+   - SINONIMI (sono lo STESSO tipo):
+     * "Set Allenatore Fuoriclasse" = "ETB" = "Elite Trainer Box"
+     * "Display" = "Booster Box"
+     * "Collezione Allenatore Fuoriclasse" = "ETB"
 
 2. STESSA ESPANSIONE/SET:
    - "Ascesa Eroica" ≠ "Fiamme Ossidiana" ≠ "Scarlatto e Violetto" ≠ "151"
