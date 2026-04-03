@@ -59,16 +59,32 @@ class EbayService:
             EbayService._token_expires_at = None
             return None
 
+    # Parole generiche TCG da rimuovere per eBay (troppo rumore)
+    NOISE_WORDS = {
+        'display', 'booster', 'box', 'bundle', 'etb', 'elite', 'trainer',
+        'buste', 'busta', 'bustine', 'carte', 'cards', 'pack', 'packs',
+        'collection', 'collezione', 'premium', 'ultra', 'tin', 'latta',
+        'set', 'expansion', 'espansione', 'sealed', 'sigillato', 'sigillata',
+        'nuovo', 'nuova', 'new', 'tcg', 'gcc', 'gioco', 'game',
+    }
+
     @staticmethod
     def simplify_query(query):
-        """Semplifica la query per eBay: rimuove lingua, quantità, punteggiatura extra"""
+        """Semplifica aggressivamente la query per eBay: tiene solo le keyword distintive"""
         q = query
         # Rimuovi indicatore lingua tra parentesi
         q = re.sub(r'\s*\((IT|EN|JP|DE|FR|ES|KO|ZH|JAP|ITA|ENG)\)\s*', ' ', q, flags=re.IGNORECASE)
-        # Rimuovi "N Buste/Bustine/Booster/Pack" specifici
-        q = re.sub(r'\b\d+\s*(buste|bustine|booster|pack|carte|cards)\b', '', q, flags=re.IGNORECASE)
-        # Rimuovi trattini isolati e punteggiatura extra
-        q = re.sub(r'\s*-\s*', ' ', q)
+        # Rimuovi "N Buste/Bustine/Booster/Pack/Carte" con numero
+        q = re.sub(r'\b\d+\s*(buste|bustine|booster|pack|carte|cards|box)\b', '', q, flags=re.IGNORECASE)
+        # Rimuovi numeri isolati (es. "36")
+        q = re.sub(r'\b\d+\b', '', q)
+        # Rimuovi simboli: & / + e trattini
+        q = re.sub(r'[&/+\-]', ' ', q)
+        # Rimuovi parole generiche TCG
+        words = q.split()
+        words = [w for w in words if w.lower() not in EbayService.NOISE_WORDS]
+        # Tieni max 5 parole significative
+        q = ' '.join(words[:5])
         q = re.sub(r'\s+', ' ', q).strip()
         return q
 

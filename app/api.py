@@ -934,3 +934,16 @@ def create_monitors_for_all():
         'total_products': len(products),
         'message': f'Creati {created} monitor (query AI: {ai_queries})'
     })
+
+
+@api_bp.route('/tcgcsv/search')
+def tcgcsv_search():
+    """Cerca prezzi sealed su TCGCSV (dati TCGPlayer gratuiti)"""
+    product_name = request.args.get('q', '')
+    if not product_name:
+        return jsonify({'error': 'Parametro q mancante', 'results': []})
+
+    from app.services.tcgcsv import TCGCSVService
+    service = TCGCSVService()
+    result = service.search_sealed(product_name, max_results=10)
+    return jsonify(result)
