@@ -40,13 +40,32 @@ def create_app():
                 # Aggiorna tolerance da 50 a 40 per monitor esistenti
                 try:
                     result = conn.execute(text(
-                        "UPDATE monitors SET price_tolerance = 40 WHERE price_tolerance = 50"
+                        "UPDATE monitors SET price_tolerance = 40 WHERE price_tolerance >= 50"
                     ))
                     conn.commit()
                     if result.rowcount > 0:
-                        print(f"[Migration] Updated {result.rowcount} monitors: tolerance 50% -> 40%")
+                        print(f"[Migration] Updated {result.rowcount} monitors: tolerance -> 40%")
                 except Exception:
                     pass
+
+                # Invalida price_records fuori dal range ±40% del prezzo prodotto
+                try:
+                    result = conn.execute(text("""
+                        UPDATE price_records SET is_valid = false
+                        WHERE is_valid = true AND id IN (
+                            SELECT pr.id FROM price_records pr
+                            JOIN monitors m ON pr.monitor_id = m.id
+                            JOIN products p ON m.product_id = p.id
+                            WHERE pr.is_valid = true
+                            AND p.price > 0
+                            AND (pr.price < p.price * 0.6 OR pr.price > p.price * 1.4)
+                        )
+                    """))
+                    conn.commit()
+                    if result.rowcount > 0:
+                        print(f"[Migration] Invalidated {result.rowcount} price records outside ±40% range")
+                except Exception as e:
+                    print(f"[Migration] Price cleanup warning: {e}")
 
                 # Pulisci record del proprio negozio dai competitor
                 import re
