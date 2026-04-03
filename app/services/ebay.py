@@ -59,32 +59,58 @@ class EbayService:
             EbayService._token_expires_at = None
             return None
 
-    # Parole generiche TCG da rimuovere per eBay (troppo rumore)
+    # Parole generiche da rimuovere per eBay (troppo rumore)
+    # NON include tipo prodotto (display, bundle, etb) perche sono importanti per trovare il prodotto giusto
     NOISE_WORDS = {
-        'display', 'booster', 'box', 'bundle', 'etb', 'elite', 'trainer',
         'buste', 'busta', 'bustine', 'carte', 'cards', 'pack', 'packs',
-        'collection', 'collezione', 'premium', 'ultra', 'tin', 'latta',
-        'set', 'expansion', 'espansione', 'sealed', 'sigillato', 'sigillata',
+        'sealed', 'sigillato', 'sigillata',
         'nuovo', 'nuova', 'new', 'tcg', 'gcc', 'gioco', 'game',
+        'set', 'expansion', 'espansione',
+    }
+
+    # Tipo prodotto: mantenuto nella query ma normalizzato
+    PRODUCT_TYPE_MAP = {
+        'display': 'booster box', 'booster box': 'booster box',
+        'etb': 'elite trainer box', 'elite trainer': 'elite trainer box',
+        'set allenatore': 'elite trainer box', 'allenatore fuoriclasse': 'elite trainer box',
+        'collezione allenatore': 'elite trainer box', 'trainer box': 'elite trainer box',
+        'bundle': 'bundle', 'tin': 'tin', 'latta': 'tin',
+        'blister': 'blister', 'collection': 'collection box',
+        'collezione premium': 'premium collection', 'premium collection': 'premium collection',
+        'upc': 'ultra premium collection', 'ultra premium': 'ultra premium collection',
     }
 
     @staticmethod
     def simplify_query(query):
-        """Semplifica aggressivamente la query per eBay: tiene solo le keyword distintive"""
+        """Semplifica la query per eBay mantenendo il tipo prodotto"""
         q = query
         # Rimuovi indicatore lingua tra parentesi
         q = re.sub(r'\s*\((IT|EN|JP|DE|FR|ES|KO|ZH|JAP|ITA|ENG)\)\s*', ' ', q, flags=re.IGNORECASE)
         # Rimuovi "N Buste/Bustine/Booster/Pack/Carte" con numero
-        q = re.sub(r'\b\d+\s*(buste|bustine|booster|pack|carte|cards|box)\b', '', q, flags=re.IGNORECASE)
-        # Rimuovi numeri isolati (es. "36")
-        q = re.sub(r'\b\d+\b', '', q)
+        q = re.sub(r'\b\d+\s*(buste|bustine|booster|pack|carte|cards)\b', '', q, flags=re.IGNORECASE)
         # Rimuovi simboli: & / + e trattini
         q = re.sub(r'[&/+\-]', ' ', q)
-        # Rimuovi parole generiche TCG
+
+        # Identifica e normalizza il tipo prodotto in inglese
+        q_lower = q.lower()
+        product_type_en = None
+        for it_term, en_term in EbayService.PRODUCT_TYPE_MAP.items():
+            if it_term in q_lower:
+                product_type_en = en_term
+                # Rimuovi il termine IT dalla query
+                q = re.sub(re.escape(it_term), '', q, flags=re.IGNORECASE)
+                break
+
+        # Rimuovi numeri isolati (es. "36") MA tieni numeri che sono nomi (es. "151")
+        q = re.sub(r'\b(?:36|24|18|12|10|6|3)\b', '', q)
+        # Rimuovi parole generiche
         words = q.split()
-        words = [w for w in words if w.lower() not in EbayService.NOISE_WORDS]
+        words = [w for w in words if w.lower() not in EbayService.NOISE_WORDS and len(w) > 1]
         # Tieni max 5 parole significative
         q = ' '.join(words[:5])
+        # Aggiungi tipo prodotto in inglese alla fine
+        if product_type_en:
+            q = f"{q} {product_type_en}"
         q = re.sub(r'\s+', ' ', q).strip()
         return q
 

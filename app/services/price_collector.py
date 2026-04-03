@@ -278,6 +278,10 @@ class PriceCollector:
             max_price = your_price * (1 + tolerance_pct / 100)
             if not (min_price <= price <= max_price):
                 return False
+        else:
+            # Senza prezzo di riferimento, rifiuta prezzi assurdi (< €1 o > €5000)
+            if price < 1 or price > 5000:
+                return False
         
         # ========== 2. KEYWORDS NEGATIVE (esclusione immediata) ==========
         critical_negatives = [
@@ -344,60 +348,85 @@ class PriceCollector:
     
     def _match_product_type_strict(self, query, title):
         """Verifica STRETTAMENTE che il tipo di prodotto corrisponda"""
-        
-        # Definisci categorie di prodotti MUTUAMENTE ESCLUSIVE
-        product_categories = {
-            'display': ['display', 'box 36', '36 buste', '36 booster', 'booster box'],
-            'bundle': ['bundle', '6 buste', '6 booster'],
-            'etb': ['etb', 'elite trainer', 'trainer box', 'set allenatore'],
-            'tin': ['tin ', ' tin', 'latta'],
-            'blister': ['blister', '3 buste', '3 booster', '2 buste', '2 booster', '1 busta', '1 booster', 'checklane'],
-            'collection': ['collection box', 'collezione premium', 'premium collection'],
-            'gift': ['gift set', 'gift box', 'set regalo'],
-            'upc': ['upc', 'ultra premium collection', 'ultra premium'],
-            'case': ['case 6', 'case 10', 'case 12', ' case ', 'cassa'],
-            'booster_single': ['busta singola', 'bustina ', 'singola busta', 'single pack'],
-        }
-        
-        # Trova la categoria del prodotto cercato
-        query_category = None
-        for cat, keywords in product_categories.items():
-            for kw in keywords:
-                if kw in query:
-                    query_category = cat
-                    break
-            if query_category:
-                break
-        
+
+        # Categorie in ordine di PRIORITA (piu specifiche prima)
+        # Ordine: upc > etb > collection > gift > case > booster_single > display > bundle > blister > tin
+        product_categories = [
+            ('upc', ['upc', 'ultra premium collection', 'ultra premium']),
+            ('etb', ['etb', 'elite trainer', 'trainer box', 'set allenatore', 'allenatore fuoriclasse', 'collezione allenatore']),
+            ('collection', ['collection box', 'collezione premium', 'premium collection']),
+            ('gift', ['gift set', 'gift box', 'set regalo']),
+            ('case', ['case 6', 'case 10', 'case 12', ' case ', 'cassa']),
+            ('booster_single', ['busta singola', 'bustina ', 'singola busta', 'single pack', 'single booster']),
+            ('display', ['display', 'box 36', '36 buste', '36 booster', 'booster box', '36 pack', '24 buste', '24 booster', '24 pack']),
+            ('bundle', ['bundle', '6 buste', '6 booster', '6 pack']),
+            ('blister', ['blister', '3 buste', '3 booster', '3 pack', '2 buste', '2 booster', '2 pack', '1 busta', '1 booster', 'checklane']),
+            ('tin', ['tin ', ' tin', 'latta']),
+        ]
+
+        def find_category(text):
+            """Trova la categoria piu specifica (prima in ordine di priorita)"""
+            for cat, keywords in product_categories:
+                for kw in keywords:
+                    if kw in text:
+                        return cat
+            return None
+
+        query_category = find_category(query)
+
         if not query_category:
             return True  # Non riusciamo a determinare, passa
-        
-        # Trova la categoria del prodotto trovato
-        title_category = None
-        for cat, keywords in product_categories.items():
-            for kw in keywords:
-                if kw in title:
-                    title_category = cat
-                    break
-            if title_category:
-                break
-        
+
+        title_category = find_category(title)
+
         # Se il titolo ha una categoria diversa -> INVALIDO
         if title_category and title_category != query_category:
             return False
-        
-        # Controlla anche i numeri di buste se presenti
-        query_numbers = re.findall(r'(\d+)\s*(?:buste|booster|pack)', query)
-        title_numbers = re.findall(r'(\d+)\s*(?:buste|booster|pack)', title)
-        
+
+        # Controlla numeri di buste/pack (regex ampliato per piu formati)
+        num_pattern = r'(\d+)\s*[-]?\s*(?:buste|bustine|booster|pack|packs)'
+        query_numbers = re.findall(num_pattern, query)
+        title_numbers = re.findall(num_pattern, title)
+
         if query_numbers and title_numbers:
-            if query_numbers[0] != title_numbers[0]:
-                return False  # Numero di buste diverso!
-        
+            # Confronta tutti i numeri trovati, non solo il primo
+            q_set = set(query_numbers)
+            t_set = set(title_numbers)
+            # Se nessun numero in comune -> mismatch
+            if not q_set & t_set:
+                return False
+
         return True
     
+    # Traduzione nomi espansioni IT -> EN per matching
+    EXPANSION_IT_TO_EN = {
+        'scintille folgoranti': 'sparking zero',
+        'scarlatto': 'scarlet', 'violetto': 'violet',
+        'fiamme ossidiana': 'obsidian flames',
+        'evoluzioni a paldea': 'paldea evolved',
+        'forze temporali': 'temporal forces',
+        'destino di paldea': 'paldean fates',
+        'corona astrale': 'stellar crown',
+        'scarlatto e violetto': 'scarlet violet',
+        'scontro paradosso': 'paradox rift',
+        'nebbie prismatiche': 'prismatic evolutions',
+        'supercarica energetica': 'surging sparks',
+        'crepuscolo mascherato': 'twilight masquerade',
+        'destini brillanti': 'shining fates',
+        'voltaggio vivido': 'vivid voltage',
+        'regno glaciale': 'chilling reign',
+        'celebrazioni': 'celebrations',
+        'stelle lucenti': 'brilliant stars',
+        'tempesta argentata': 'silver tempest',
+        'spada e scudo': 'sword shield',
+        'sole e luna': 'sun moon',
+        'ascesa eroica': 'shrouded fable',
+        'fiamme spettrali': 'phantom forces',
+        'alleati evoluti': 'evolving skies',
+    }
+
     def _match_expansion(self, query, title):
-        """Verifica che l'espansione/set corrisponda"""
+        """Verifica che l'espansione/set corrisponda (con traduzione IT->EN)"""
 
         # Parole comuni da ignorare nel matching
         common_words = {
@@ -419,9 +448,25 @@ class PriceCollector:
             'structure', 'checklane', 'allenatore', 'fuoriclasse',
         }
 
-        # Estrai parole significative dalla query
+        # Traduci la query IT -> EN per matchare titoli inglesi
+        translated_query = query
+        for it_name, en_name in self.EXPANSION_IT_TO_EN.items():
+            if it_name in query:
+                translated_query = translated_query.replace(it_name, en_name)
+
+        # Estrai parole significative (lettere 3+ E numeri che sono nomi, es "151")
         query_words = set(re.findall(r'[a-zA-ZàèéìòùÀÈÉÌÒÙ]{3,}', query))
-        significant_query_words = [w for w in query_words if w not in common_words and w not in type_words]
+        translated_words = set(re.findall(r'[a-zA-ZàèéìòùÀÈÉÌÒÙ]{3,}', translated_query))
+        # Aggiungi numeri significativi (nomi di espansioni come "151")
+        query_numbers = set(re.findall(r'\b(\d{2,4})\b', query))
+        # Filtra numeri generici di buste (36, 24, 6, 3, 10, 12, 18)
+        pack_numbers = {'36', '24', '18', '12', '10', '6', '3', '1', '2'}
+        significant_numbers = query_numbers - pack_numbers
+
+        all_query_words = query_words | translated_words
+        significant_query_words = [w for w in all_query_words if w not in common_words and w not in type_words]
+        # Aggiungi numeri significativi come "parole" da matchare
+        significant_query_words.extend(significant_numbers)
 
         if not significant_query_words:
             return True

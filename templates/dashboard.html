@@ -406,10 +406,49 @@ async function viewPrices(monitorId) {
 
         if (data.stats && data.stats.total > 0) {
             html += `
-                <div class="row g-3 mb-4">
-                    <div class="col-4"><div class="price-box"><div class="label">Tuo Prezzo</div><div class="value your-price">&euro;${data.your_price?.toFixed(2) || '-'}</div></div></div>
-                    <div class="col-4"><div class="price-box"><div class="label">Min Competitor</div><div class="value best-price">&euro;${data.stats.min_price?.toFixed(2) || '-'}</div></div></div>
-                    <div class="col-4"><div class="price-box"><div class="label">Media</div><div class="value">&euro;${data.stats.avg_price?.toFixed(2) || '-'}</div></div></div>
+                <div class="row g-3 mb-3">
+                    <div class="col-12"><div class="price-box"><div class="label">Tuo Prezzo</div><div class="value your-price" style="font-size: 1.5rem;">&euro;${data.your_price?.toFixed(2) || '-'}</div></div></div>
+                </div>
+                <div class="row g-2 mb-4">
+                    <div class="col-4">
+                        <div class="price-box">
+                            <div class="label">Min</div>
+                            <div class="value best-price">&euro;${data.stats.min_price?.toFixed(2) || '-'}</div>
+                            ${data.your_price && data.stats.min_price ? (() => {
+                                const d = data.your_price - data.stats.min_price;
+                                const pct = (d / data.stats.min_price * 100).toFixed(1);
+                                return d > 0
+                                    ? `<small class="text-danger fw-bold">+&euro;${d.toFixed(2)} (+${pct}%)</small>`
+                                    : `<small class="text-success fw-bold">&euro;${d.toFixed(2)} (${pct}%)</small>`;
+                            })() : ''}
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="price-box">
+                            <div class="label">Media</div>
+                            <div class="value">&euro;${data.stats.avg_price?.toFixed(2) || '-'}</div>
+                            ${data.your_price && data.stats.avg_price ? (() => {
+                                const d = data.your_price - data.stats.avg_price;
+                                const pct = (d / data.stats.avg_price * 100).toFixed(1);
+                                return d > 0
+                                    ? `<small class="text-danger fw-bold">+&euro;${d.toFixed(2)} (+${pct}%)</small>`
+                                    : `<small class="text-success fw-bold">&euro;${d.toFixed(2)} (${pct}%)</small>`;
+                            })() : ''}
+                        </div>
+                    </div>
+                    <div class="col-4">
+                        <div class="price-box">
+                            <div class="label">Max</div>
+                            <div class="value text-danger">&euro;${data.stats.max_price?.toFixed(2) || '-'}</div>
+                            ${data.your_price && data.stats.max_price ? (() => {
+                                const d = data.your_price - data.stats.max_price;
+                                const pct = (d / data.stats.max_price * 100).toFixed(1);
+                                return d < 0
+                                    ? `<small class="text-success fw-bold">&euro;${d.toFixed(2)} (${pct}%)</small>`
+                                    : `<small class="text-danger fw-bold">+&euro;${d.toFixed(2)} (+${pct}%)</small>`;
+                            })() : ''}
+                        </div>
+                    </div>
                 </div>
             `;
             if (data.history && data.history.length > 0) {
