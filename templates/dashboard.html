@@ -456,17 +456,45 @@ async function viewPrices(monitorId) {
             }
             html += `
                 <h6 class="mt-4 mb-3">Ultimi prezzi validi (${data.prices.length})</h6>
-                <div class="table-responsive" style="max-height: 300px; overflow-y: auto;">
-                    <table class="table table-sm">
-                        <thead><tr><th>Titolo</th><th>Prezzo</th><th>vs Tuo</th><th>Venditore</th></tr></thead>
+                <div class="table-responsive" style="max-height: 400px; overflow-y: auto;">
+                    <table class="table table-sm table-hover">
+                        <thead class="table-light sticky-top">
+                            <tr>
+                                <th style="width: 70px;"></th>
+                                <th>Titolo</th>
+                                <th>Prezzo</th>
+                                <th>vs Tuo</th>
+                                <th>Fonte</th>
+                                <th>Venditore</th>
+                            </tr>
+                        </thead>
                         <tbody>
                             ${data.prices.map(p => {
                                 const diff = data.your_price ? ((p.price - data.your_price) / data.your_price * 100).toFixed(1) : null;
                                 const diffClass = diff < 0 ? 'lower' : 'higher';
-                                return `<tr>
+                                const sourceBadge = p.source === 'google_shopping' ? '<span class="badge bg-primary">G</span>' :
+                                                   (p.source === 'google_web' ? '<span class="badge bg-info">W</span>' :
+                                                   '<span class="badge bg-warning text-dark">E</span>');
+                                let feedbackBtns = '';
+                                if (p.user_feedback === true) {
+                                    feedbackBtns = `
+                                        <button class="btn btn-sm btn-success py-0 px-1" disabled>✓</button>
+                                        <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="event.stopPropagation(); sendDashFeedback(${p.id}, false)">✗</button>`;
+                                } else if (p.user_feedback === false) {
+                                    feedbackBtns = `
+                                        <button class="btn btn-sm btn-outline-success py-0 px-1" onclick="event.stopPropagation(); sendDashFeedback(${p.id}, true)">✓</button>
+                                        <button class="btn btn-sm btn-danger py-0 px-1" disabled>✗</button>`;
+                                } else {
+                                    feedbackBtns = `
+                                        <button class="btn btn-sm btn-outline-success py-0 px-1" onclick="event.stopPropagation(); sendDashFeedback(${p.id}, true)" title="Corretto">✓</button>
+                                        <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="event.stopPropagation(); sendDashFeedback(${p.id}, false)" title="Errato">✗</button>`;
+                                }
+                                return `<tr data-record-id="${p.id}">
+                                    <td>${feedbackBtns}</td>
                                     <td>${p.url ? `<a href="${p.url}" target="_blank">${escapeHtml(p.title)}</a>` : escapeHtml(p.title)}</td>
                                     <td><strong>&euro;${p.price.toFixed(2)}</strong></td>
                                     <td>${diff !== null ? `<span class="price-diff ${diffClass}">${diff > 0 ? '+' : ''}${diff}%</span>` : '-'}</td>
+                                    <td>${sourceBadge}</td>
                                     <td>${escapeHtml(p.seller_name || '-')}</td>
                                 </tr>`;
                             }).join('')}
@@ -497,6 +525,33 @@ async function viewPrices(monitorId) {
         }
     } catch (e) {
         body.innerHTML = `<div class="alert alert-danger">Errore: ${e.message}</div>`;
+    }
+}
+
+async function sendDashFeedback(recordId, isCorrect) {
+    try {
+        const res = await fetch(`/api/price-records/${recordId}/feedback`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ is_correct: isCorrect })
+        });
+        if (res.ok) {
+            const row = document.querySelector(`tr[data-record-id="${recordId}"]`);
+            if (row) {
+                const td = row.querySelector('td:first-child');
+                if (isCorrect) {
+                    td.innerHTML = `
+                        <button class="btn btn-sm btn-success py-0 px-1" disabled>✓</button>
+                        <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="event.stopPropagation(); sendDashFeedback(${recordId}, false)">✗</button>`;
+                } else {
+                    td.innerHTML = `
+                        <button class="btn btn-sm btn-outline-success py-0 px-1" onclick="event.stopPropagation(); sendDashFeedback(${recordId}, true)">✓</button>
+                        <button class="btn btn-sm btn-danger py-0 px-1" disabled>✗</button>`;
+                }
+            }
+        }
+    } catch (e) {
+        console.error('Failed to send feedback:', e);
     }
 }
 </script>
