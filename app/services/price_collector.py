@@ -317,10 +317,14 @@ class PriceCollector:
         # Se il titolo non contiene NESSUN termine TCG, probabilmente è un accessorio
         tcg_indicators = [
             'pokemon', 'pokémon', 'magic', 'mtg', 'yugioh', 'yu-gi-oh',
-            'lorcana', 'one piece', 'digimon', 'dragon ball',
+            'lorcana', 'one piece', 'digimon', 'dragon ball', 'flesh and blood',
+            'altered', 'weiss schwarz', 'cardfight', 'union arena',
             'booster', 'display', 'bundle', 'etb', 'blister', 'tin ',
-            'buste', 'busta', 'espansione', 'expansion',
+            'buste', 'busta', 'espansione', 'expansion', 'collection',
             'scarlet', 'violet', 'scarlatto', 'violetto',
+            'prismatic', 'obsidian', 'paldea', 'temporal', 'stellar',
+            'surging', 'twilight', 'shrouded', 'sword', 'shield',
+            'sealed', 'sigillato',
         ]
         has_tcg_term = any(term in title_lower for term in tcg_indicators)
         if not has_tcg_term:
@@ -354,7 +358,7 @@ class PriceCollector:
         product_categories = [
             ('upc', ['upc', 'ultra premium collection', 'ultra premium']),
             ('etb', ['etb', 'elite trainer', 'trainer box', 'set allenatore', 'allenatore fuoriclasse', 'collezione allenatore']),
-            ('collection', ['collection box', 'collezione premium', 'premium collection']),
+            ('collection', ['collection box', 'collezione premium', 'premium collection', 'album collection', 'poster collection', 'binder collection', 'mini tin collection']),
             ('gift', ['gift set', 'gift box', 'set regalo']),
             ('case', ['case 6', 'case 10', 'case 12', ' case ', 'cassa']),
             ('booster_single', ['busta singola', 'bustina ', 'singola busta', 'single pack', 'single booster']),

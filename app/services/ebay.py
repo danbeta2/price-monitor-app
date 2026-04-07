@@ -75,8 +75,9 @@ class EbayService:
         'set allenatore': 'elite trainer box', 'allenatore fuoriclasse': 'elite trainer box',
         'collezione allenatore': 'elite trainer box', 'trainer box': 'elite trainer box',
         'bundle': 'bundle', 'tin': 'tin', 'latta': 'tin',
-        'blister': 'blister', 'collection': 'collection box',
-        'collezione premium': 'premium collection', 'premium collection': 'premium collection',
+        'blister': 'blister',
+        'album collection': 'album collection', 'poster collection': 'poster collection',
+        'collection': 'collection', 'collezione premium': 'premium collection', 'premium collection': 'premium collection',
         'upc': 'ultra premium collection', 'ultra premium': 'ultra premium collection',
     }
 
