@@ -626,7 +626,7 @@ def get_monitor_prices(monitor_id):
     your_price = monitor.product.price if monitor.product else None
 
     # Usa la tolerance configurata dal monitor
-    tolerance_pct = monitor.price_tolerance if monitor.price_tolerance and monitor.price_tolerance > 0 else 50
+    tolerance_pct = min(40, monitor.price_tolerance if monitor.price_tolerance and monitor.price_tolerance > 0 else 40)
     min_reasonable = your_price * (1 - tolerance_pct / 100) if your_price else 0.01
     max_reasonable = your_price * (1 + tolerance_pct / 100) if your_price else 100000
     

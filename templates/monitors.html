@@ -807,7 +807,12 @@ function renderPriceModal(data) {
                         ${data.prices.map(p => {
                             const diff = data.your_price ? (p.price - data.your_price) : null;
                             const diffClass = diff !== null ? (diff < 0 ? 'text-success' : (diff > 0 ? 'text-danger' : '')) : '';
-                            const rowClass = p.is_valid ? '' : 'opacity-50';
+                            const diffPct = data.your_price ? Math.abs((p.price - data.your_price) / data.your_price * 100) : 0;
+                            const isRejected = p.user_feedback === false || !p.is_valid;
+                            const isSuspect = diffPct > 40;
+                            const rowClass = isRejected ? '' : (p.is_valid ? '' : '');
+                            const rowStyle = isRejected ? 'opacity: 0.35; background: rgba(255,59,48,0.06); text-decoration: line-through;'
+                                : isSuspect ? 'opacity: 0.5; background: rgba(255,149,0,0.06);' : '';
                             const sourceBadge = p.source === 'google_shopping' ? '<span class="badge bg-primary">G</span>' : 
                                                (p.source === 'google_web' ? '<span class="badge bg-info">W</span>' : 
                                                '<span class="badge bg-warning text-dark">E</span>');
@@ -832,7 +837,7 @@ function renderPriceModal(data) {
                             }
                             
                             return `
-                                <tr class="${rowClass}" data-valid="${p.is_valid}" data-record-id="${p.id}">
+                                <tr class="${rowClass}" data-valid="${p.is_valid}" data-record-id="${p.id}" style="${rowStyle}">
                                     <td>${feedbackBtns}</td>
                                     <td>
                                         ${p.url ? `<a href="${p.url}" target="_blank" class="text-decoration-none" title="${escapeHtml(p.title)}">${escapeHtml(p.title)}</a>` : escapeHtml(p.title)}
