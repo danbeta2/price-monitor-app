@@ -83,6 +83,79 @@ class PriceCollector:
     def is_ai_validation_enabled(cls):
         return cls._use_ai_validation
     
+    @classmethod
+    def build_smart_queries(cls, product_name):
+        """
+        Genera query di ricerca ottimizzate dal nome prodotto.
+        Ritorna una lista di query da eseguire (IT + EN).
+        """
+        name_lower = product_name.lower()
+
+        # 1. Rileva il gioco (Pokemon, Magic, etc.)
+        game = ''
+        for g in ['pokemon', 'pokémon', 'magic', 'mtg', 'yugioh', 'yu-gi-oh', 'lorcana', 'one piece', 'digimon', 'dragon ball', 'altered', 'flesh and blood']:
+            if g in name_lower:
+                game = g.replace('pokémon', 'pokemon').replace('yu-gi-oh', 'yugioh')
+                break
+
+        # 2. Rileva espansione IT e traduci in EN
+        expansion_it = ''
+        expansion_en = ''
+        # Cerca match più lungo prima (ordina per lunghezza decrescente)
+        sorted_expansions = sorted(cls.EXPANSION_IT_TO_EN.items(), key=lambda x: len(x[0]), reverse=True)
+        for it_name, en_name in sorted_expansions:
+            if it_name in name_lower:
+                expansion_it = it_name
+                expansion_en = en_name
+                break
+
+        # Se non trovata in mappa, prova a estrarre l'espansione rimuovendo parti note
+        if not expansion_it:
+            # Rimuovi gioco, tipo prodotto, numeri, lingue
+            clean = name_lower
+            for remove in [game, 'display', 'booster', 'box', 'bundle', 'etb', 'elite trainer',
+                          'set allenatore', 'allenatore fuoriclasse', 'collezione', 'collection',
+                          'tin', 'latta', 'blister', 'buste', 'busta', 'pack', 'packs',
+                          'sealed', 'sigillato', 'tcg', 'gcc', '(it)', '(en)', '(jp)', '–', '-']:
+                clean = clean.replace(remove, ' ')
+            clean = re.sub(r'\b\d+\b', '', clean)
+            clean = re.sub(r'\s+', ' ', clean).strip()
+            if len(clean) > 2:
+                expansion_it = clean
+
+        # 3. Rileva tipo prodotto
+        product_type_it = ''
+        product_type_en = ''
+        sorted_types = sorted(cls.PRODUCT_TYPE_IT_TO_EN.items(), key=lambda x: len(x[0]), reverse=True)
+        for it_type, en_type in sorted_types:
+            if it_type in name_lower:
+                product_type_it = it_type
+                product_type_en = en_type
+                break
+
+        # 4. Costruisci le query
+        queries = []
+
+        # Query IT principale (corta e mirata)
+        q_it = f"{game} {expansion_it} {product_type_it}".strip()
+        q_it = re.sub(r'\s+', ' ', q_it)
+        if q_it and len(q_it) > 5:
+            queries.append(q_it)
+
+        # Query EN tradotta
+        if expansion_en:
+            q_en = f"{game} {expansion_en} {product_type_en}".strip()
+            q_en = re.sub(r'\s+', ' ', q_en)
+            if q_en and q_en != q_it:
+                queries.append(q_en)
+
+        # Fallback: query originale se nessuna generata
+        if not queries:
+            queries.append(product_name)
+
+        print(f"[SmartQuery] '{product_name[:60]}' -> {queries}")
+        return queries
+
     def collect_for_monitor(self, monitor):
         """Raccoglie prezzi da tutte le fonti configurate per un monitor"""
         results = {
@@ -92,11 +165,11 @@ class PriceCollector:
             'skipped_duplicates': 0,
             'sources': {}
         }
-        
+
         your_price = monitor.product.price if monitor.product else None
         language = getattr(monitor, 'language', 'it') or 'it'
         source = getattr(monitor, 'source', 'all') or 'all'
-        
+
         # Determina quali fonti usare
         sources_to_use = []
         if source == 'all':
@@ -107,31 +180,49 @@ class PriceCollector:
             sources_to_use = ['google_shopping', 'google_web']
         else:
             sources_to_use = [source]
-        
+
+        # Genera query smart (IT + EN) dal nome prodotto
+        product_name = monitor.product.name if monitor.product else monitor.search_query
+        smart_queries = self.build_smart_queries(product_name)
+        # Includi anche la search_query originale se diversa
+        original_query = monitor.search_query
+        all_queries = list(dict.fromkeys(smart_queries + [original_query]))  # deduplica mantenendo ordine
+
         all_items = []
-        
-        # Raccogli da ogni fonte
-        for src in sources_to_use:
-            if src == 'google_shopping' and self.serpapi.is_configured():
-                result = self.serpapi.search(monitor.search_query, num_results=50)
-                for item in result.get('results', []):
-                    item['source'] = 'google_shopping'
-                    all_items.append(item)
-                results['sources']['google_shopping'] = len(result.get('results', []))
-            
-            elif src == 'google_web' and self.serpapi.is_configured():
-                result = self.serpapi.search_web(monitor.search_query, num_results=30)
-                for item in result.get('results', []):
-                    item['source'] = 'google_web'
-                    all_items.append(item)
-                results['sources']['google_web'] = len(result.get('results', []))
-                
-            elif src == 'ebay' and self.ebay.is_configured():
-                result = self.ebay.search(monitor.search_query, num_results=50)
-                for item in result.get('results', []):
-                    item['source'] = 'ebay'
-                    all_items.append(item)
-                results['sources']['ebay'] = len(result.get('results', []))
+        seen_titles = set()  # dedup tra query diverse
+
+        # Raccogli da ogni fonte PER OGNI QUERY
+        for query in all_queries:
+            for src in sources_to_use:
+                if src == 'google_shopping' and self.serpapi.is_configured():
+                    result = self.serpapi.search(query, num_results=30)
+                    for item in result.get('results', []):
+                        title_key = item.get('title', '').lower().strip()
+                        if title_key not in seen_titles:
+                            seen_titles.add(title_key)
+                            item['source'] = 'google_shopping'
+                            all_items.append(item)
+                    results['sources']['google_shopping'] = results['sources'].get('google_shopping', 0) + len(result.get('results', []))
+
+                elif src == 'google_web' and self.serpapi.is_configured():
+                    result = self.serpapi.search_web(query, num_results=20)
+                    for item in result.get('results', []):
+                        title_key = item.get('title', '').lower().strip()
+                        if title_key not in seen_titles:
+                            seen_titles.add(title_key)
+                            item['source'] = 'google_web'
+                            all_items.append(item)
+                    results['sources']['google_web'] = results['sources'].get('google_web', 0) + len(result.get('results', []))
+
+                elif src == 'ebay' and self.ebay.is_configured():
+                    result = self.ebay.search(query, num_results=30)
+                    for item in result.get('results', []):
+                        title_key = item.get('title', '').lower().strip()
+                        if title_key not in seen_titles:
+                            seen_titles.add(title_key)
+                            item['source'] = 'ebay'
+                            all_items.append(item)
+                    results['sources']['ebay'] = results['sources'].get('ebay', 0) + len(result.get('results', []))
         
         if not all_items:
             return {'error': 'Nessuna fonte configurata o nessun risultato', **results}
@@ -402,31 +493,87 @@ class PriceCollector:
 
         return True
     
-    # Traduzione nomi espansioni IT -> EN per matching
+    # Traduzione nomi espansioni IT -> EN (e viceversa) per matching e query
     EXPANSION_IT_TO_EN = {
-        'scintille folgoranti': 'sparking zero',
-        'scarlatto': 'scarlet', 'violetto': 'violet',
+        # Scarlet & Violet era
+        'scarlatto e violetto': 'scarlet violet', 'scarlatto': 'scarlet', 'violetto': 'violet',
         'fiamme ossidiana': 'obsidian flames',
         'evoluzioni a paldea': 'paldea evolved',
         'forze temporali': 'temporal forces',
         'destino di paldea': 'paldean fates',
         'corona astrale': 'stellar crown',
-        'scarlatto e violetto': 'scarlet violet',
         'scontro paradosso': 'paradox rift',
         'nebbie prismatiche': 'prismatic evolutions',
         'supercarica energetica': 'surging sparks',
         'crepuscolo mascherato': 'twilight masquerade',
+        'scintille folgoranti': 'sparkling zero',
+        'rivali predestinati': 'fated rivals',
+        # Sword & Shield era
+        'spada e scudo': 'sword shield',
+        'stelle lucenti': 'brilliant stars',
+        'tempesta argentata': 'silver tempest',
         'destini brillanti': 'shining fates',
         'voltaggio vivido': 'vivid voltage',
         'regno glaciale': 'chilling reign',
-        'celebrazioni': 'celebrations',
-        'stelle lucenti': 'brilliant stars',
-        'tempesta argentata': 'silver tempest',
-        'spada e scudo': 'sword shield',
-        'sole e luna': 'sun moon',
-        'ascesa eroica': 'shrouded fable',
-        'fiamme spettrali': 'phantom forces',
         'alleati evoluti': 'evolving skies',
+        'celebrazioni': 'celebrations',
+        'colpo fusione': 'fusion strike',
+        'origine perduta': 'lost origin',
+        'astri lucenti': 'astral radiance',
+        'fiamme spettrali': 'phantom forces',
+        # Sun & Moon era
+        'sole e luna': 'sun moon',
+        'ombre infuocate': 'burning shadows',
+        'invasione scarlatta': 'crimson invasion',
+        'ultraprisma': 'ultra prism',
+        'tempesta celestiale': 'celestial storm',
+        'tuoni perduti': 'lost thunder',
+        'legami inossidabili': 'unbroken bonds',
+        'eclissi cosmica': 'cosmic eclipse',
+        'destino nascosto': 'hidden fates',
+        # XY era
+        'mega evoluzione': 'mega evolution',
+        'megaevoluzione': 'mega evolution',
+        'caos nascente': 'ancient origins',
+        'furie volanti': 'roaring skies',
+        'duello primordiale': 'primal clash',
+        'origini antiche': 'ancient origins',
+        'punto di rottura': 'breakpoint',
+        'turbine spettrale': 'phantom forces',
+        'vapori accesi': 'steam siege',
+        'destini incrociati': 'fates collide',
+        'generazioni': 'generations',
+        'evoluzioni': 'evolutions',
+        # Black & White era
+        'nero e bianco': 'black white',
+        'confini varcati': 'boundaries crossed',
+        'glaciazione plasmatica': 'plasma freeze',
+        # Diamond & Pearl / misc
+        'diamante e perla': 'diamond pearl',
+        # One Piece
+        'mare di azzurrite': 'azurite sea',
+        'sussurri nel pozzo': 'whispers in the well',
+        # Lorcana
+        'nelle terre d\'inchiostro': 'into the inklands',
+        'lucentezza siderale': 'shimmering skies',
+        'il ritorno di ursula': 'ursula\'s return',
+        'cieli scintillanti': 'shimmering skies',
+        'le terre d\'inchiostro': 'into the inklands',
+    }
+
+    # Tipo prodotto IT -> EN per query
+    PRODUCT_TYPE_IT_TO_EN = {
+        'display': 'booster box', 'booster box': 'booster box',
+        'box 36 buste': 'booster box 36', 'box 24 buste': 'booster box 24',
+        'bundle': 'bundle', 'etb': 'elite trainer box',
+        'set allenatore fuoriclasse': 'elite trainer box',
+        'set allenatore': 'elite trainer box',
+        'collezione allenatore': 'elite trainer box',
+        'tin': 'tin', 'latta': 'tin',
+        'blister': 'blister', 'collection': 'collection',
+        'album collection': 'album collection',
+        'upc': 'ultra premium collection',
+        'starter deck': 'starter deck', 'mazzo': 'starter deck',
     }
 
     def _match_expansion(self, query, title):
@@ -475,8 +622,15 @@ class PriceCollector:
         if not significant_query_words:
             return True
 
-        # Almeno il 75% delle parole significative deve essere nel titolo
-        matches = sum(1 for w in significant_query_words if w in title)
+        # Estrai parole dal titolo per word-boundary matching (no substring)
+        title_words = set(re.findall(r'[a-zA-ZàèéìòùÀÈÉÌÒÙ]{3,}', title))
+        title_words_lower = {w.lower() for w in title_words}
+        # Aggiungi anche numeri dal titolo
+        title_numbers = set(re.findall(r'\b(\d{2,4})\b', title))
+        title_all = title_words_lower | title_numbers
+
+        # Match: parola query deve essere ESATTAMENTE presente come parola nel titolo
+        matches = sum(1 for w in significant_query_words if w.lower() in title_all)
         required = max(1, int(len(significant_query_words) * 0.75))
 
         return matches >= required
