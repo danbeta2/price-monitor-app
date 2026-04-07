@@ -808,10 +808,12 @@ function renderPriceModal(data) {
                             const diff = data.your_price ? (p.price - data.your_price) : null;
                             const diffClass = diff !== null ? (diff < 0 ? 'text-success' : (diff > 0 ? 'text-danger' : '')) : '';
                             const diffPct = data.your_price ? Math.abs((p.price - data.your_price) / data.your_price * 100) : 0;
+                            const isApproved = p.user_feedback === true;
                             const isRejected = p.user_feedback === false || !p.is_valid;
-                            const isSuspect = diffPct > 40;
-                            const rowClass = isRejected ? '' : (p.is_valid ? '' : '');
-                            const rowStyle = isRejected ? 'opacity: 0.35; background: rgba(255,59,48,0.06); text-decoration: line-through;'
+                            const isSuspect = !isApproved && diffPct > 40;
+                            const rowClass = '';
+                            const rowStyle = isApproved ? ''
+                                : isRejected ? 'opacity: 0.35; background: rgba(255,59,48,0.06); text-decoration: line-through;'
                                 : isSuspect ? 'opacity: 0.5; background: rgba(255,149,0,0.06);' : '';
                             const sourceBadge = p.source === 'google_shopping' ? '<span class="badge bg-primary">G</span>' : 
                                                (p.source === 'google_web' ? '<span class="badge bg-info">W</span>' : 
@@ -1230,11 +1232,17 @@ async function sendFeedback(recordId, isCorrect) {
             if (row) {
                 const td = row.querySelector('td:first-child');
                 if (isCorrect) {
+                    row.style.opacity = '';
+                    row.style.background = '';
+                    row.style.textDecoration = '';
                     td.innerHTML = `
                         <button class="btn btn-sm btn-success py-0 px-1" disabled>✓</button>
                         <button class="btn btn-sm btn-outline-danger py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${recordId}, false)" title="Cambia in ERRATO">✗</button>
                     `;
                 } else {
+                    row.style.opacity = '0.35';
+                    row.style.background = 'rgba(255,59,48,0.06)';
+                    row.style.textDecoration = 'line-through';
                     td.innerHTML = `
                         <button class="btn btn-sm btn-outline-success py-0 px-1" onclick="event.stopPropagation(); sendFeedback(${recordId}, true)" title="Cambia in CORRETTO">✓</button>
                         <button class="btn btn-sm btn-danger py-0 px-1" disabled>✗</button>
