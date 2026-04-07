@@ -1,7 +1,11 @@
 from flask import Blueprint, render_template, current_app
 from sqlalchemy import func
+from datetime import datetime, timedelta
 
 main_bp = Blueprint('main', __name__)
+
+# Tolerance massima usata per il calcolo dashboard (cap forzato)
+MAX_TOLERANCE = 40
 
 def get_sources_configured():
     return {
@@ -27,13 +31,14 @@ def dashboard():
     no_data = 0
 
     monitors_with_product = Monitor.query.filter_by(is_active=True).all()
+    cutoff_date = datetime.utcnow() - timedelta(days=30)
     for m in monitors_with_product:
         if not m.product or not m.product.price:
             no_data += 1
             continue
 
         your_price = m.product.price
-        tolerance_pct = m.price_tolerance if m.price_tolerance and m.price_tolerance > 0 else 40
+        tolerance_pct = min(MAX_TOLERANCE, m.price_tolerance if m.price_tolerance and m.price_tolerance > 0 else MAX_TOLERANCE)
         min_r = your_price * (1 - tolerance_pct / 100)
         max_r = your_price * (1 + tolerance_pct / 100)
 
@@ -44,6 +49,7 @@ def dashboard():
             PriceRecord.is_valid == True,
             PriceRecord.price >= min_r,
             PriceRecord.price <= max_r,
+            PriceRecord.fetched_at >= cutoff_date,
         ).scalar()
 
         if avg_result is None:
@@ -75,7 +81,7 @@ def dashboard():
             continue
 
         your_price = m.product.price
-        tolerance_pct = m.price_tolerance if m.price_tolerance and m.price_tolerance > 0 else 40
+        tolerance_pct = min(MAX_TOLERANCE, m.price_tolerance if m.price_tolerance and m.price_tolerance > 0 else MAX_TOLERANCE)
         min_r = your_price * (1 - tolerance_pct / 100)
         max_r = your_price * (1 + tolerance_pct / 100)
 
@@ -87,6 +93,7 @@ def dashboard():
             PriceRecord.is_valid == True,
             PriceRecord.price >= min_r,
             PriceRecord.price <= max_r,
+            PriceRecord.fetched_at >= cutoff_date,
         ).first()
 
         if not stats.avg:

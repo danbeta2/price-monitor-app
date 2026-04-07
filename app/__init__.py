@@ -37,10 +37,10 @@ def create_app():
                         conn.commit()
                     except Exception:
                         pass  # Indice già esistente
-                # Aggiorna tolerance da 50 a 40 per monitor esistenti
+                # Aggiorna tolerance: forza max 40% per tutti i monitor
                 try:
                     result = conn.execute(text(
-                        "UPDATE monitors SET price_tolerance = 40 WHERE price_tolerance >= 50"
+                        "UPDATE monitors SET price_tolerance = 40 WHERE price_tolerance > 40 OR price_tolerance IS NULL"
                     ))
                     conn.commit()
                     if result.rowcount > 0:
