@@ -67,6 +67,34 @@ def create_app():
                 except Exception as e:
                     print(f"[Migration] Price cleanup warning: {e}")
 
+                # Invalida record che contengono keyword negative (salvati prima dei fix)
+                negative_keywords = [
+                    'lotto', 'lotti', 'lot ', ' lot',
+                    '2x', '3x', '4x', '5x',
+                    'x2 ', 'x3 ', 'x4 ', 'x5 ',
+                    'empty', 'vuoto', 'vuota',
+                    'fake', 'replica', 'proxy', 'repack', 'resealed',
+                    'psa ', 'bgs ', 'cgc ', 'graded',
+                    'sleeves', 'playmat', 'toploader', 'binder',
+                    'ultra pro', 'dragon shield', 'gamegenic',
+                    'singola', 'singolo', 'single card',
+                    'poster', 'album foto', 'raccoglitore',
+                ]
+                try:
+                    # Costruisci WHERE con OR per ogni keyword
+                    conditions = " OR ".join(
+                        f"LOWER(title) LIKE :kw{i}" for i in range(len(negative_keywords))
+                    )
+                    params = {f"kw{i}": f"%{kw}%" for i, kw in enumerate(negative_keywords)}
+                    result = conn.execute(text(
+                        f"UPDATE price_records SET is_valid = false WHERE is_valid = true AND ({conditions})"
+                    ), params)
+                    conn.commit()
+                    if result.rowcount > 0:
+                        print(f"[Migration] Invalidated {result.rowcount} records with negative keywords")
+                except Exception as e:
+                    print(f"[Migration] Negative keyword cleanup warning: {e}")
+
                 # Pulisci record del proprio negozio dai competitor
                 import re
                 wc_url = app.config.get('WC_URL', '')
