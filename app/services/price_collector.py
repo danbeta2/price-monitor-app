@@ -87,6 +87,7 @@ class PriceCollector:
     def build_smart_queries(cls, product_name):
         """
         Genera query di ricerca ottimizzate dal nome prodotto.
+        Strategia: espansione + quantità (es. "Caos Nascente 36 buste").
         Ritorna una lista di query da eseguire (IT + EN).
         """
         name_lower = product_name.lower()
@@ -98,10 +99,13 @@ class PriceCollector:
                 game = g.replace('pokémon', 'pokemon').replace('yu-gi-oh', 'yugioh')
                 break
 
-        # 2. Rileva espansione IT e traduci in EN
+        # 2. Estrai quantità + unità (es. "36 buste", "6 buste", "10 carte")
+        quantity_match = re.search(r'(\d+)\s*(buste|bustine|booster|pack|packs|carte|cards|busta)', name_lower)
+        quantity_str = quantity_match.group(0).strip() if quantity_match else ''
+
+        # 3. Rileva espansione IT e traduci in EN
         expansion_it = ''
         expansion_en = ''
-        # Cerca match più lungo prima (ordina per lunghezza decrescente)
         sorted_expansions = sorted(cls.EXPANSION_IT_TO_EN.items(), key=lambda x: len(x[0]), reverse=True)
         for it_name, en_name in sorted_expansions:
             if it_name in name_lower:
@@ -111,43 +115,52 @@ class PriceCollector:
 
         # Se non trovata in mappa, prova a estrarre l'espansione rimuovendo parti note
         if not expansion_it:
-            # Rimuovi gioco, tipo prodotto, numeri, lingue
             clean = name_lower
             for remove in [game, 'display', 'booster', 'box', 'bundle', 'etb', 'elite trainer',
                           'set allenatore', 'allenatore fuoriclasse', 'collezione', 'collection',
-                          'tin', 'latta', 'blister', 'buste', 'busta', 'pack', 'packs',
-                          'sealed', 'sigillato', 'tcg', 'gcc', '(it)', '(en)', '(jp)', '–', '-']:
+                          'tin', 'latta', 'blister', 'buste', 'busta', 'bustine', 'pack', 'packs',
+                          'sealed', 'sigillato', 'tcg', 'gcc', '(it)', '(en)', '(jp)', '–', '-',
+                          'mega evoluzione', 'megaevoluzione']:
                 clean = clean.replace(remove, ' ')
             clean = re.sub(r'\b\d+\b', '', clean)
             clean = re.sub(r'\s+', ' ', clean).strip()
             if len(clean) > 2:
                 expansion_it = clean
 
-        # 3. Rileva tipo prodotto
-        product_type_it = ''
+        # 4. Rileva tipo prodotto per query EN (solo per traduzione, non per query IT)
         product_type_en = ''
         sorted_types = sorted(cls.PRODUCT_TYPE_IT_TO_EN.items(), key=lambda x: len(x[0]), reverse=True)
         for it_type, en_type in sorted_types:
             if it_type in name_lower:
-                product_type_it = it_type
                 product_type_en = en_type
                 break
 
-        # 4. Costruisci le query
+        # 5. Costruisci le query — SEMPLICI: espansione + quantità
         queries = []
 
-        # Query IT principale (corta e mirata)
-        q_it = f"{game} {expansion_it} {product_type_it}".strip()
-        q_it = re.sub(r'\s+', ' ', q_it)
-        if q_it and len(q_it) > 5:
+        # Query IT: espansione + quantità (es. "Caos Nascente 36 buste")
+        if expansion_it and quantity_str:
+            q_it = f"{expansion_it} {quantity_str}".strip()
+            q_it = re.sub(r'\s+', ' ', q_it)
+            queries.append(q_it)
+        elif expansion_it:
+            # Nessuna quantità: usa espansione + tipo prodotto generico
+            q_it = f"{expansion_it}".strip()
             queries.append(q_it)
 
-        # Query EN tradotta
+        # Query EN: espansione tradotta + tipo prodotto EN
         if expansion_en:
-            q_en = f"{game} {expansion_en} {product_type_en}".strip()
+            q_en = f"{expansion_en} {product_type_en}".strip()
             q_en = re.sub(r'\s+', ' ', q_en)
-            if q_en and q_en != q_it:
+            if q_en not in queries:
                 queries.append(q_en)
+
+        # Query con gioco + espansione (per risultati Google più mirati)
+        if game and expansion_it:
+            q_game = f"{game} {expansion_it} {quantity_str}".strip()
+            q_game = re.sub(r'\s+', ' ', q_game)
+            if q_game not in queries:
+                queries.append(q_game)
 
         # Fallback: query originale se nessuna generata
         if not queries:
