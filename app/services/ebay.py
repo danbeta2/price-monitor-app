@@ -60,9 +60,9 @@ class EbayService:
             return None
 
     # Parole generiche da rimuovere per eBay (troppo rumore)
-    # NON include tipo prodotto (display, bundle, etb) perche sono importanti per trovare il prodotto giusto
+    # NON include quantità/unità (buste, pack) perché "36 buste" è essenziale per il matching
+    # NON include tipo prodotto (display, bundle, etb) perche sono importanti
     NOISE_WORDS = {
-        'buste', 'busta', 'bustine', 'carte', 'cards', 'pack', 'packs',
         'sealed', 'sigillato', 'sigillata',
         'nuovo', 'nuova', 'new', 'tcg', 'gcc', 'gioco', 'game',
         'set', 'expansion', 'espansione',
@@ -83,35 +83,22 @@ class EbayService:
 
     @staticmethod
     def simplify_query(query):
-        """Semplifica la query per eBay mantenendo il tipo prodotto"""
+        """Semplifica la query per eBay mantenendo quantità e tipo prodotto.
+
+        Strategia: la query arriva già ottimizzata da build_smart_queries()
+        (es. "Caos Nascente 36 buste"). Qui facciamo pulizia leggera.
+        """
         q = query
         # Rimuovi indicatore lingua tra parentesi
         q = re.sub(r'\s*\((IT|EN|JP|DE|FR|ES|KO|ZH|JAP|ITA|ENG)\)\s*', ' ', q, flags=re.IGNORECASE)
-        # Rimuovi "N Buste/Bustine/Booster/Pack/Carte" con numero
-        q = re.sub(r'\b\d+\s*(buste|bustine|booster|pack|carte|cards)\b', '', q, flags=re.IGNORECASE)
         # Rimuovi simboli: & / + e trattini
         q = re.sub(r'[&/+\-]', ' ', q)
 
-        # Identifica e normalizza il tipo prodotto in inglese
-        q_lower = q.lower()
-        product_type_en = None
-        for it_term, en_term in EbayService.PRODUCT_TYPE_MAP.items():
-            if it_term in q_lower:
-                product_type_en = en_term
-                # Rimuovi il termine IT dalla query
-                q = re.sub(re.escape(it_term), '', q, flags=re.IGNORECASE)
-                break
-
-        # Rimuovi numeri isolati (es. "36") MA tieni numeri che sono nomi (es. "151")
-        q = re.sub(r'\b(?:36|24|18|12|10|6|3)\b', '', q)
-        # Rimuovi parole generiche
+        # Rimuovi parole generiche (ma NON quantità come "36 buste")
         words = q.split()
         words = [w for w in words if w.lower() not in EbayService.NOISE_WORDS and len(w) > 1]
-        # Tieni max 5 parole significative
-        q = ' '.join(words[:5])
-        # Aggiungi tipo prodotto in inglese alla fine
-        if product_type_en:
-            q = f"{q} {product_type_en}"
+        # Tieni max 6 parole significative
+        q = ' '.join(words[:6])
         q = re.sub(r'\s+', ' ', q).strip()
         return q
 
