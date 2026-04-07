@@ -96,22 +96,33 @@ def create_app():
                     print(f"[Migration] Negative keyword cleanup warning: {e}")
 
                 # Pulisci record del proprio negozio dai competitor
-                import re
+                import re as re_mod
                 wc_url = app.config.get('WC_URL', '')
                 if wc_url:
-                    match = re.search(r'://(?:www\.)?([^/]+)', wc_url)
-                    if match:
-                        domain = match.group(1).lower()
+                    match_url = re_mod.search(r'://(?:www\.)?([^/]+)', wc_url)
+                    if match_url:
+                        domain = match_url.group(1).lower()
                         domain_short = domain.split('.')[0]
                         try:
                             result = conn.execute(text(
-                                "DELETE FROM price_records WHERE LOWER(seller_name) LIKE :d1 OR LOWER(seller_name) LIKE :d2"
-                            ), {'d1': f'%{domain}%', 'd2': f'%{domain_short}%'})
+                                "DELETE FROM price_records WHERE LOWER(seller_name) LIKE :d1 OR LOWER(seller_name) LIKE :d2 OR LOWER(url) LIKE :d3 OR LOWER(url) LIKE :d4"
+                            ), {'d1': f'%{domain}%', 'd2': f'%{domain_short}%', 'd3': f'%{domain}%', 'd4': f'%{domain_short}%'})
                             conn.commit()
                             if result.rowcount > 0:
                                 print(f"[Migration] Removed {result.rowcount} own-store records ({domain})")
                         except Exception as e2:
                             print(f"[Migration] Own-store cleanup warning: {e2}")
+                else:
+                    # Fallback: cerca "scimmia" direttamente se WC_URL non configurato
+                    try:
+                        result = conn.execute(text(
+                            "DELETE FROM price_records WHERE LOWER(seller_name) LIKE '%scimmia%' OR LOWER(url) LIKE '%scimmia%'"
+                        ))
+                        conn.commit()
+                        if result.rowcount > 0:
+                            print(f"[Migration] Removed {result.rowcount} own-store records (scimmia fallback)")
+                    except Exception as e2:
+                        print(f"[Migration] Own-store cleanup warning: {e2}")
 
         except Exception as e:
             print(f"[Migration] Warning: {e}")
