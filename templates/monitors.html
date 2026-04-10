@@ -868,24 +868,93 @@ function renderChart(history, yourPrice) {
     
     if (priceChart) priceChart.destroy();
     
+    const pointDefaults = { pointRadius: 4, pointHoverRadius: 7, pointHitRadius: 20, borderWidth: 2 };
     const datasets = [
-        { label: 'Min', data: history.map(h => h.min_price), borderColor: '#198754', fill: false, tension: 0.3 },
-        { label: 'Media', data: history.map(h => h.avg_price), borderColor: '#0d6efd', backgroundColor: 'rgba(13, 110, 253, 0.1)', fill: true, tension: 0.3 },
-        { label: 'Max', data: history.map(h => h.max_price), borderColor: '#dc3545', fill: false, tension: 0.3 }
+        { label: 'Min', data: history.map(h => h.min_price), borderColor: '#198754', pointBackgroundColor: '#198754', fill: false, tension: 0.3, ...pointDefaults },
+        { label: 'Media', data: history.map(h => h.avg_price), borderColor: '#0d6efd', pointBackgroundColor: '#0d6efd', backgroundColor: 'rgba(13, 110, 253, 0.08)', fill: true, tension: 0.3, ...pointDefaults },
+        { label: 'Max', data: history.map(h => h.max_price), borderColor: '#dc3545', pointBackgroundColor: '#dc3545', fill: false, tension: 0.3, ...pointDefaults }
     ];
-    
+
     if (yourPrice) {
-        datasets.push({ label: 'Tuo', data: history.map(() => yourPrice), borderColor: '#ff9500', borderWidth: 2, borderDash: [5, 5], fill: false, pointRadius: 0 });
+        datasets.push({ label: 'Tuo', data: history.map(() => yourPrice), borderColor: '#ff9500', borderWidth: 2, borderDash: [5, 5], fill: false, pointRadius: 0, pointHoverRadius: 0 });
     }
     
+    // Plugin crosshair: linea verticale al passaggio del mouse
+    const crosshairPlugin = {
+        id: 'crosshair',
+        afterDraw(chart) {
+            if (chart._crosshairX == null) return;
+            const { ctx: c, chartArea: { top, bottom } } = chart;
+            c.save();
+            c.beginPath();
+            c.moveTo(chart._crosshairX, top);
+            c.lineTo(chart._crosshairX, bottom);
+            c.lineWidth = 1;
+            c.strokeStyle = 'rgba(0,0,0,0.2)';
+            c.setLineDash([4, 4]);
+            c.stroke();
+            c.restore();
+        }
+    };
+
     priceChart = new Chart(ctx, {
         type: 'line',
         data: { labels: history.map(h => h.date), datasets },
+        plugins: [crosshairPlugin],
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            scales: { y: { beginAtZero: false, ticks: { callback: v => '€' + v.toFixed(0) } } },
-            plugins: { tooltip: { callbacks: { label: ctx => ctx.dataset.label + ': €' + ctx.raw.toFixed(2) } } }
+            interaction: {
+                mode: 'index',
+                intersect: false,
+            },
+            hover: {
+                mode: 'index',
+                intersect: false,
+            },
+            onHover(e, elements, chart) {
+                if (e.type === 'mousemove' && elements.length > 0) {
+                    chart._crosshairX = elements[0].element.x;
+                } else {
+                    chart._crosshairX = null;
+                }
+                chart.draw();
+            },
+            scales: {
+                x: {
+                    grid: { display: false },
+                },
+                y: {
+                    beginAtZero: false,
+                    ticks: { callback: v => '€' + v.toFixed(0) },
+                    grid: { color: 'rgba(0,0,0,0.05)' },
+                }
+            },
+            plugins: {
+                tooltip: {
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: 'rgba(255,255,255,0.95)',
+                    titleColor: '#333',
+                    bodyColor: '#555',
+                    borderColor: '#ddd',
+                    borderWidth: 1,
+                    padding: 12,
+                    cornerRadius: 8,
+                    titleFont: { weight: 'bold', size: 13 },
+                    bodyFont: { size: 12 },
+                    callbacks: {
+                        title: items => items[0]?.label || '',
+                        label: item => {
+                            const val = item.raw?.toFixed(2) || '0.00';
+                            return ` ${item.dataset.label}: €${val}`;
+                        }
+                    }
+                },
+                legend: {
+                    labels: { usePointStyle: true, pointStyle: 'line', padding: 16 }
+                }
+            }
         }
     });
 }
