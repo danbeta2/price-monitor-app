@@ -879,18 +879,20 @@ function renderChart(history, yourPrice) {
         datasets.push({ label: 'Tuo', data: history.map(() => yourPrice), borderColor: '#ff9500', borderWidth: 2, borderDash: [5, 5], fill: false, pointRadius: 0, pointHoverRadius: 0 });
     }
     
-    // Plugin crosshair: linea verticale al passaggio del mouse
+    // Plugin crosshair: linea verticale tratteggiata che segue il tooltip
     const crosshairPlugin = {
         id: 'crosshair',
-        afterDraw(chart) {
-            if (chart._crosshairX == null) return;
+        afterDatasetsDraw(chart) {
+            const tooltip = chart.tooltip;
+            if (!tooltip || !tooltip._active || tooltip._active.length === 0) return;
+            const x = tooltip._active[0].element.x;
             const { ctx: c, chartArea: { top, bottom } } = chart;
             c.save();
             c.beginPath();
-            c.moveTo(chart._crosshairX, top);
-            c.lineTo(chart._crosshairX, bottom);
+            c.moveTo(x, top);
+            c.lineTo(x, bottom);
             c.lineWidth = 1;
-            c.strokeStyle = 'rgba(0,0,0,0.2)';
+            c.strokeStyle = 'rgba(0,0,0,0.25)';
             c.setLineDash([4, 4]);
             c.stroke();
             c.restore();
@@ -908,18 +910,6 @@ function renderChart(history, yourPrice) {
                 mode: 'index',
                 intersect: false,
             },
-            hover: {
-                mode: 'index',
-                intersect: false,
-            },
-            onHover(e, elements, chart) {
-                if (e.type === 'mousemove' && elements.length > 0) {
-                    chart._crosshairX = elements[0].element.x;
-                } else {
-                    chart._crosshairX = null;
-                }
-                chart.draw();
-            },
             scales: {
                 x: {
                     grid: { display: false },
@@ -932,6 +922,7 @@ function renderChart(history, yourPrice) {
             },
             plugins: {
                 tooltip: {
+                    enabled: true,
                     mode: 'index',
                     intersect: false,
                     backgroundColor: 'rgba(255,255,255,0.95)',
@@ -943,12 +934,10 @@ function renderChart(history, yourPrice) {
                     cornerRadius: 8,
                     titleFont: { weight: 'bold', size: 13 },
                     bodyFont: { size: 12 },
+                    displayColors: true,
                     callbacks: {
-                        title: items => items[0]?.label || '',
-                        label: item => {
-                            const val = item.raw?.toFixed(2) || '0.00';
-                            return ` ${item.dataset.label}: €${val}`;
-                        }
+                        title: items => items.length ? items[0].label : '',
+                        label: item => ` ${item.dataset.label}: €${(item.raw || 0).toFixed(2)}`
                     }
                 },
                 legend: {
