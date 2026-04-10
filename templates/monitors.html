@@ -1249,9 +1249,119 @@ async function sendFeedback(recordId, isCorrect) {
                     `;
                 }
             }
+
+            // Ricalcola statistiche dal server (le stats cambiano perché is_valid cambia)
+            if (currentMonitorId) {
+                updateStatsAfterFeedback(currentMonitorId);
+            }
         }
     } catch (e) {
         console.error('Failed to send feedback:', e);
+    }
+}
+
+async function updateStatsAfterFeedback(monitorId) {
+    try {
+        const res = await fetch(`/api/monitors/${monitorId}/prices?show_all=true`);
+        const data = await res.json();
+        if (!data.stats || !data.stats.total) return;
+
+        const yourPrice = data.your_price || 0;
+        const avgPrice = data.stats.avg_price || 0;
+        const minPrice = data.stats.min_price || 0;
+        const maxPrice = data.stats.max_price || 0;
+
+        // Aggiorna badge posizione
+        const diffFromAvg = yourPrice - avgPrice;
+        const diffPercent = avgPrice > 0 ? ((diffFromAvg / avgPrice) * 100).toFixed(1) : 0;
+        const diffSign = diffFromAvg > 0 ? '+' : '';
+        const diffClass = diffFromAvg < 0 ? 'text-success' : (diffFromAvg > 0 ? 'text-danger' : 'text-muted');
+
+        let positionBadge = '';
+        if (yourPrice && avgPrice) {
+            if (yourPrice <= minPrice) positionBadge = '<span class="badge bg-success">Miglior prezzo!</span>';
+            else if (yourPrice < avgPrice) positionBadge = '<span class="badge bg-info">Sotto la media</span>';
+            else positionBadge = '<span class="badge bg-warning">Sopra la media</span>';
+        }
+
+        // Aggiorna il card IL TUO PREZZO (differenziale vs media)
+        const priceCard = document.querySelector('#price-modal-body .card');
+        if (priceCard) {
+            const diffEl = priceCard.querySelector('.col-auto.text-end');
+            if (diffEl) {
+                diffEl.innerHTML = `
+                    <div class="${diffClass}" style="font-size: 1.2rem;">
+                        ${diffSign}€${Math.abs(diffFromAvg).toFixed(2)} (${diffSign}${diffPercent}%)
+                    </div>
+                    <div class="small text-muted">vs media mercato</div>
+                    ${positionBadge}
+                `;
+            }
+        }
+
+        // Aggiorna min/avg/max boxes
+        const statBoxes = document.querySelectorAll('#price-modal-body .row.mb-4.g-2 .col-4');
+        if (statBoxes.length >= 3) {
+            // Min
+            const minBox = statBoxes[0].querySelector('.text-center');
+            if (minBox) {
+                const dMin = yourPrice - minPrice;
+                const pctMin = minPrice > 0 ? ((dMin / minPrice) * 100).toFixed(1) : 0;
+                minBox.innerHTML = `
+                    <div class="h5 text-success mb-1">€${minPrice.toFixed(2)}</div>
+                    <small class="text-muted d-block">Min</small>
+                    ${yourPrice ? (dMin > 0
+                        ? `<small class="text-danger fw-bold">+€${dMin.toFixed(2)} (+${pctMin}%)</small>`
+                        : `<small class="text-success fw-bold">€${dMin.toFixed(2)} (${pctMin}%)</small>`)
+                    : ''}
+                `;
+            }
+            // Avg
+            const avgBox = statBoxes[1].querySelector('.text-center');
+            if (avgBox) {
+                const dAvg = yourPrice - avgPrice;
+                const pctAvg = avgPrice > 0 ? ((dAvg / avgPrice) * 100).toFixed(1) : 0;
+                avgBox.innerHTML = `
+                    <div class="h5 mb-1">€${avgPrice.toFixed(2)}</div>
+                    <small class="text-muted d-block">Media</small>
+                    ${yourPrice ? (dAvg > 0
+                        ? `<small class="text-danger fw-bold">+€${dAvg.toFixed(2)} (+${pctAvg}%)</small>`
+                        : `<small class="text-success fw-bold">€${dAvg.toFixed(2)} (${pctAvg}%)</small>`)
+                    : ''}
+                `;
+            }
+            // Max
+            const maxBox = statBoxes[2].querySelector('.text-center');
+            if (maxBox) {
+                const dMax = yourPrice - maxPrice;
+                const pctMax = maxPrice > 0 ? ((dMax / maxPrice) * 100).toFixed(1) : 0;
+                maxBox.innerHTML = `
+                    <div class="h5 text-danger mb-1">€${maxPrice.toFixed(2)}</div>
+                    <small class="text-muted d-block">Max</small>
+                    ${yourPrice ? (dMax < 0
+                        ? `<small class="text-success fw-bold">€${dMax.toFixed(2)} (${pctMax}%)</small>`
+                        : `<small class="text-danger fw-bold">+€${dMax.toFixed(2)} (+${pctMax}%)</small>`)
+                    : ''}
+                `;
+            }
+        }
+
+        // Aggiorna contatori
+        const countBoxes = document.querySelectorAll('#price-modal-body .row.mb-4.g-2 .col-6');
+        if (countBoxes.length >= 2) {
+            countBoxes[0].querySelector('.h6').textContent = data.stats.total || 0;
+            countBoxes[1].querySelector('.h6').textContent = data.stats.sellers || 0;
+        }
+
+        // Aggiorna header tabella prezzi
+        const validCount = data.prices ? data.prices.filter(p => p.is_valid).length : 0;
+        const totalCount = data.prices ? data.prices.length : 0;
+        const priceHeader = document.querySelector('#price-modal-body h6.mb-0');
+        if (priceHeader) {
+            priceHeader.textContent = `Prezzi (${validCount} validi su ${totalCount})`;
+        }
+    } catch (e) {
+        console.error('Failed to update stats:', e);
     }
 }
 </script>
